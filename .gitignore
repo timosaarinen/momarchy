@@ -1,0 +1,29 @@
+# Local/private machine state
+.env
+.env.*
+*.secret
+*.token
+secrets/
+private/
+
+# SSH / credentials
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Browser/user data
+cookies*
+*.sqlite
+*.db
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary output
+.tmp/
+tmp/
+logs/
