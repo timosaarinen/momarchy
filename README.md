@@ -65,9 +65,12 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Confirmed lid-close can be temporarily inhibited while SSH stays alive; Apple SMC sensors work nicely from Linux.
 - Considered HTML, Tauri and terminal UI for Momarchy Home. Naturally ended at: rewrite it in Rust and make it a TUI.
 - Decided the source repo/compiler stay on newer machines; Momarchy targets get tiny deployed artifacts over SSH/Tailscale.
+- Bootstrapped the real Rust project: Ratatui/Crossterm Home skeleton, `momarchy status`, `cargo deploy` over SSH and a tiny target bootstrap script.
 
 ## TODO
 
+- [x] Bootstrap Rust/Ratatui project and simple SSH `cargo deploy` workflow.
+- [x] Add simple target bootstrap/setup script and document runtime assumptions.
 - [ ] Make the Rust/Ratatui Momarchy Home actually useful; huge, obvious, mouse-first controls with Finnish UI text.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
 - [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
@@ -75,7 +78,6 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Create separate admin/maintenance user; keep mom account boring, non-admin and eventually auto-login.
 - [ ] Add Tailscale for remote maintenance and deployment outside the LAN.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
-- [ ] Add simple target bootstrap/setup script and keep required runtime dependencies documented.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
 - [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no AI/model/provider jargon in mom UI.
 - [ ] Rebuild/evaluate Voxtype for the Core 2 Duo; speech input could be genuinely useful here.
