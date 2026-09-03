@@ -1,3 +1,6 @@
+# Rust build output
+/target/
+
 # Local/private machine state
 .env
 .env.*
@@ -5,6 +8,7 @@
 *.token
 secrets/
 private/
+.momarchy.local*
 
 # SSH / credentials
 *.pem
