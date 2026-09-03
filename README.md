@@ -58,7 +58,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Hardware: Core 2 Duo P7350 2.0 GHz, 2 GB RAM, NVIDIA C79/GeForce 9400M on `nouveau`, Broadcom BCM4322 Wi-Fi.
 - Good ol' Apple hardware: sensors, fan control, battery, keyboard/trackpad and graphics all basically just work; battery still reports ~95% of design capacity (!).
 - Hit the Apple/Linux Num Lock quirk again after reboot: the right-hand letter keys came up as an emulated numeric keypad (`j` → `1`, `k` → `2`, etc.); on this MacBook, plain `F6` toggles Num Lock off.
-- Broadcom Wi-Fi is still an open investigation; Ethernet works.
+- Fixed the BCM4322 Wi-Fi cleanly: `b43` already detected the card but was missing `ucode16_mimo.fw`; installing `b43-firmware` made `wlan0` appear and scanning/connect work. Cold reboot with Ethernet unplugged auto-connected over Wi-Fi, and SSH plus IPv4/IPv6 Internet access worked normally.
 - Omarchy itself leaves roughly ~900 MB available after boot. Chrome homepage ~800 MB available; scrolling a real `is.fi` page stayed around ~500 MB available. Tight, but surprisingly usable.
 - Chrome Memory Saver on; normal operation should avoid swap even though swap stays available as the emergency cushion.
 - Voxtype looked promising for mom-friendly speech input, then immediately died on an AVX2 illegal instruction. Old CPU build later :D
@@ -88,7 +88,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Add an optional automation `render` command that dumps the whole virtual Ratatui frame from an in-memory backend when semantic state/actions are not enough.
 - [x] Support prerecorded stdin flows (`cat tests/foo.play | momarchy home --automation`) so scripts can run Home flows without a graphical test harness; add real regression playtests next.
 - [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
-- [ ] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook.
+- [x] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook: `b43` + `b43-firmware`, cold-boot autoconnect verified.
 - [ ] Create separate admin/maintenance user; keep mom account boring, non-admin and eventually auto-login.
 - [ ] Add Tailscale for remote maintenance and deployment outside the LAN.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
