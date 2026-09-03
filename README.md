@@ -76,6 +76,14 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Make the Rust/Ratatui Momarchy Home actually useful; huge, obvious, mouse-first controls with Finnish UI text.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
+- [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
+- [ ] Put all host-affecting actions behind one tiny execution boundary so Home selection code never launches processes directly.
+- [ ] Make development actions dry-run by default: show/log the action category + command instead of launching it; target config enables live actions, with explicit `--live-actions` / `--dry-run` overrides and an obvious DEV banner.
+- [ ] Keep Home state/actions independent from the real terminal backend so humans and automation drive the same state machine.
+- [ ] Add `momarchy home --automation`: deterministic terminal size, no raw mode/mouse capture/animations, line commands on stdin and deterministic state/action snapshots on stdout; diagnostics stay on stderr.
+- [ ] Automation should support stable semantic commands (`select games`, `activate`) plus human-equivalent input (`key down`, `key enter`, optional `click x y`) for navigation/hitbox testing.
+- [ ] Add an optional automation `render` command that dumps the whole virtual Ratatui frame from an in-memory backend when semantic state/actions are not enough.
+- [ ] Support prerecorded stdin playtests (`cat tests/foo.play | momarchy home --automation`) so agents/scripts can run complete Home flows without a graphical test harness.
 - [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
 - [ ] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook.
 - [ ] Create separate admin/maintenance user; keep mom account boring, non-admin and eventually auto-login.
