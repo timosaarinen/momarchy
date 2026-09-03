@@ -84,6 +84,11 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added a permanent `Super+M` (`Command+M` on the MacBook keyboard) binding in `~/.config/hypr/bindings.lua` for “take me Home”. It uses Omarchy's launch-or-focus behavior, so it focuses an existing Momarchy Home window or launches one if Home has been exited.
 - Confirmed `Super+M` works on the real 2009 MacBook. Basic appliance loop is now real: boot -> Home; `ESC` -> Omarchy; `Super+M` -> Home.
 - Remote-maintenance footnote: plain `hyprctl` from SSH has the same missing-session-environment issue; running it through the graphical user's systemd environment (for example `systemd-run --user --collect --wait hyprctl reload`) works.
+- Created a separate maintenance account, `tims`, with its own home directory and `wheel` membership. On this install `wheel` alone only inherited Omarchy's narrow command-specific sudo rules, not general administrator access, so added an explicit password-required `tims ALL=(ALL:ALL) ALL` drop-in under `/etc/sudoers.d/` and verified it with `visudo`.
+- Added the development-machine SSH key to `tims` with `ssh-copy-id`; fresh `ssh tims@momarchy` is now passwordless while `sudo` still requires the maintenance password. The original `t` account is intentionally left unchanged for now; there is no need to rush privilege cleanup while the appliance flow is still evolving.
+- Added minimal device-level Tailscale instead of Omarchy's optional desktop extras: installed the `tailscale` package, enabled `tailscaled`, joined the existing tailnet with `tailscale up --accept-routes`, and skipped operator grants, Taildrop receiver, bar widget and admin-console webapp because Momarchy does not need them.
+- Confirmed ordinary users can read `tailscale status` without extra privileges, while configuration changes can simply keep using `sudo` when needed.
+- Final remote-support proof: connected to `tims` over the MacBook's Tailscale IP from another tailnet machine using the existing SSH key. No public port forwarding needed. Remote maintenance outside mom's LAN is now working.
 
 ## TODO
 
@@ -104,8 +109,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [x] Support prerecorded stdin flows (`cat tests/foo.play | momarchy home --automation`) so scripts can run Home flows without a graphical test harness; add real regression playtests next.
 - [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
 - [x] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook: `b43` + `b43-firmware`, cold-boot autoconnect verified.
-- [ ] Create separate admin/maintenance user; keep mom account boring, non-admin and eventually auto-login.
-- [ ] Add Tailscale for remote maintenance and deployment outside the LAN.
+- [x] Create separate maintenance user `tims`; SSH key login and password-required unrestricted sudo verified. Keep the existing `t` account unchanged unless a later handoff need justifies changing it.
+- [x] Add Tailscale for remote maintenance outside the LAN; SSH over the Tailscale address verified.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
 - [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no technical backend jargon in mom UI.
