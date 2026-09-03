@@ -58,6 +58,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Hardware: Core 2 Duo P7350 2.0 GHz, 2 GB RAM, NVIDIA C79/GeForce 9400M on `nouveau`, Broadcom BCM4322 Wi-Fi.
 - Good ol' Apple hardware: sensors, fan control, battery, keyboard/trackpad and graphics all basically just work; battery still reports ~95% of design capacity (!).
 - Hit the Apple/Linux Num Lock quirk again after reboot: the right-hand letter keys came up as an emulated numeric keypad (`j` → `1`, `k` → `2`, etc.); on this MacBook, plain `F6` toggles Num Lock off.
+- Fixed Num Lock permanently for this target: Omarchy intentionally sets Hyprland `numlock_by_default = true`, which triggers Linux `hid_apple`'s embedded-keypad emulation on this old MacBook. Added a user override in `~/.config/hypr/input.lua` with `hl.config({ input = { numlock_by_default = false } })`; after restart the keyboard comes up normally with no F6 workaround.
 - Fixed the BCM4322 Wi-Fi cleanly: `b43` already detected the card but was missing `ucode16_mimo.fw`; installing `b43-firmware` made `wlan0` appear and scanning/connect work. Cold reboot with Ethernet unplugged auto-connected over Wi-Fi, and SSH plus IPv4/IPv6 Internet access worked normally.
 - Omarchy itself leaves roughly ~900 MB available after boot. Chrome homepage ~800 MB available; scrolling a real `is.fi` page stayed around ~500 MB available. Tight, but surprisingly usable.
 - Chrome Memory Saver on; normal operation should avoid swap even though swap stays available as the emergency cushion.
