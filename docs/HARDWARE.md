@@ -34,7 +34,7 @@ The GeForce 9400M-era NVIDIA chipset also provides a large part of the platform 
 - Flashing the Omarchy 4.0.2 ISO directly to USB worked.
 - Omarchy installed in 12m 56s.
 - Normal reboot selected Omarchy correctly; no Option-key boot selection was required after installation.
-- Old embedded MacBook numpad came up enabled under Linux: `j` became `1`, `k` became `2`, etc. On this machine plain `F6` toggles it off.
+- Linux's Apple keyboard driver can emulate the old embedded numpad layout when Num Lock is active: `j` becomes `1`, `k` becomes `2`, etc. This has occasionally come up enabled after boot on this machine; plain `F6` toggles Num Lock off.
 
 ### Open hardware work
 
