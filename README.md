@@ -72,6 +72,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [x] Bootstrap Rust/Ratatui project and simple SSH `cargo deploy` workflow.
 - [x] Add simple target bootstrap/setup script and document runtime assumptions.
 - [ ] Make the Rust/Ratatui Momarchy Home actually useful; huge, obvious, mouse-first controls with Finnish UI text.
+- [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
 - [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
 - [ ] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook.
