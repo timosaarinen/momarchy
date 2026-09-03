@@ -79,7 +79,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Add Tailscale for remote maintenance and deployment outside the LAN.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
-- [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no AI/model/provider jargon in mom UI.
+- [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no technical backend jargon in mom UI.
 - [ ] Rebuild/evaluate Voxtype for the Core 2 Duo; speech input could be genuinely useful here.
 - [ ] `Katso televisiosta`: investigate Chromecast flow for YouTube, Yle Areena and other useful Finnish streams.
 - [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
