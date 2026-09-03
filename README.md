@@ -66,6 +66,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Considered HTML, Tauri and terminal UI for Momarchy Home. Naturally ended at: rewrite it in Rust and make it a TUI.
 - Decided the source repo/compiler stay on newer machines; Momarchy targets get tiny deployed artifacts over SSH/Tailscale.
 - Bootstrapped the real Rust project: Ratatui/Crossterm Home skeleton, `momarchy status`, `cargo deploy` over SSH and a tiny target bootstrap script.
+- Found the Chromecast too, a 2021/01-era unit. Momarchy bundle is now shaping up as MacBook + Chromecast, both preconfigured before handoff.
+- Added a low-priority `Pelit` idea: tiny TUI games, starting with an original falling-block game and maybe Snake. Mom still likes that old Game Boy style of play :)
 
 ## TODO
 
@@ -82,7 +84,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
 - [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no technical backend jargon in mom UI.
 - [ ] Rebuild/evaluate Voxtype for the Core 2 Duo; speech input could be genuinely useful here.
-- [ ] `Katso televisiosta`: investigate Chromecast flow for YouTube, Yle Areena and other useful Finnish streams.
+- [ ] `Katso televisiosta`: make the found Chromecast useful from Momarchy; test YouTube, Yle Areena and other useful Finnish streams.
+- [ ] `Pelit`: optional tiny TUI games; start with an original falling-block game and maybe Snake. Low priority, keep it simple and legally distinct from commercial classics.
 - [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
 - [ ] Keep Q4OS Trinity / other lean GUI Linux as fallback if Omarchy eventually becomes too much for 2 GB.
 
