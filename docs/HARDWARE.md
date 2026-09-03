@@ -11,7 +11,7 @@ Observed under Omarchy:
 - Memory: 2 GB
 - GPU/chipset: NVIDIA C79 / GeForce 9400M G
 - Linux graphics driver: `nouveau`
-- Wi-Fi: Broadcom BCM4322 802.11a/b/g/n
+- Wi-Fi: Broadcom BCM4322 802.11a/b/g/n, working with Linux `b43` + `b43-firmware`
 - Storage: ~112 GB Hitachi SATA disk
 - Omarchy partition: ~50 GB carved out beside the existing macOS installation
 - Swap: ~3.3 GiB free after initial boot
@@ -36,15 +36,24 @@ The GeForce 9400M-era NVIDIA chipset also provides a large part of the platform 
 - Normal reboot selected Omarchy correctly; no Option-key boot selection was required after installation.
 - Linux's Apple keyboard driver can emulate the old embedded numpad layout when Num Lock is active: `j` becomes `1`, `k` becomes `2`, etc. This has occasionally come up enabled after boot on this machine; plain `F6` toggles Num Lock off.
 
-### Open hardware work
+### Wi-Fi
 
-Broadcom BCM4322 Wi-Fi is not working yet. Ethernet works and was used for the first Omarchy update. Investigate the correct current Arch/Omarchy Broadcom driver path before adding packages blindly.
+The built-in Broadcom BCM4322 is PCI ID `14e4:432b` (Apple AirPort Extreme subsystem `106b:008e`). The kernel already bound it through `b43-pci-bridge` / `ssb`, and `b43` successfully detected the BCM4322 N-PHY and radio, but no wireless interface appeared because the required firmware was missing:
+
+```text
+b43-phy0 ERROR: Firmware file "b43/ucode16_mimo.fw" not found
+```
+
+Installing the AUR package `b43-firmware` supplied the missing firmware. After reboot, `b43` loaded firmware version 784.2, `wlan0` appeared, NetworkManager could scan both 2.4 GHz and 5 GHz networks, and the MacBook connected normally.
+
+A cold reboot with Ethernet unplugged verified that NetworkManager auto-connects to the saved Wi-Fi network. IPv4, IPv6, DNS and SSH over Wi-Fi all worked. Keep `b43`; there is no reason to switch to proprietary `broadcom-wl` unless real instability appears later.
+
+### Open hardware work
 
 Still worth testing for the intended daily-use machine:
 
 ```text
 audio
-Wi-Fi + reconnect after reboot
 suspend/resume
 browser video / YouTube
 long-running thermal stability
