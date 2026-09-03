@@ -57,6 +57,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - It booted straight into Omarchy without needing Option/EFI boot babysitting. Props to DHH + Omarchy team.
 - Hardware: Core 2 Duo P7350 2.0 GHz, 2 GB RAM, NVIDIA C79/GeForce 9400M on `nouveau`, Broadcom BCM4322 Wi-Fi.
 - Good ol' Apple hardware: sensors, fan control, battery, keyboard/trackpad and graphics all basically just work; battery still reports ~95% of design capacity (!).
+- Hit the Apple/Linux Num Lock quirk again after reboot: the right-hand letter keys came up as an emulated numeric keypad (`j` → `1`, `k` → `2`, etc.); on this MacBook, plain `F6` toggles Num Lock off.
 - Broadcom Wi-Fi is still an open investigation; Ethernet works.
 - Omarchy itself leaves roughly ~900 MB available after boot. Chrome homepage ~800 MB available; scrolling a real `is.fi` page stayed around ~500 MB available. Tight, but surprisingly usable.
 - Chrome Memory Saver on; normal operation should avoid swap even though swap stays available as the emergency cushion.
