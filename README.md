@@ -72,11 +72,25 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added a low-priority `Pelit` idea: tiny TUI games, starting with an original falling-block game and maybe Snake. Mom still likes that old Game Boy style of play :)
 - First proper Home pass: eight big Finnish actions, mouse/keyboard navigation, `Pelit` with Palikat/Mato placeholders, `Apua`, dry-run host actions and a tiny stdin/stdout automation mode.
 
+### 2026-09-04 — Day 4
+
+- Started turning the tested TUI into the actual appliance shell: first target was making Momarchy Home appear automatically with the Omarchy/Hyprland session instead of inventing a Momarchy daemon.
+- Confirmed Omarchy 4.0.2 has the intended user-owned `~/.config/hypr/autostart.lua` hook and `o.launch_on_start(...)` helper, so Momarchy can stay inside the normal Omarchy startup model.
+- First manual launch from SSH failed with `failed to connect to wayland; no compositor running?`; useful reminder that an SSH shell does not inherit the graphical session's `WAYLAND_DISPLAY` / `HYPRLAND_INSTANCE_SIGNATURE`.
+- Confirmed Omarchy had imported the graphical environment into the user systemd manager (`DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-1`, Hyprland instance signature present).
+- Proved remote GUI launching cleanly with `systemd-run --user`: a Foot window running `~/.local/bin/momarchy home` appeared on the real MacBook from the SSH session.
+- Added Momarchy Home to `~/.config/hypr/autostart.lua` using a dedicated Foot app id, `org.momarchy.home`.
+- Rebooted for the real test. Success: Momarchy Home opens fullscreen immediately, even before the top bar appears. `ESC` still exits to ordinary Omarchy as the intentional maintenance escape hatch.
+- Added a permanent `Super+M` (`Command+M` on the MacBook keyboard) binding in `~/.config/hypr/bindings.lua` for “take me Home”. It uses Omarchy's launch-or-focus behavior, so it focuses an existing Momarchy Home window or launches one if Home has been exited.
+- Confirmed `Super+M` works on the real 2009 MacBook. Basic appliance loop is now real: boot -> Home; `ESC` -> Omarchy; `Super+M` -> Home.
+- Remote-maintenance footnote: plain `hyprctl` from SSH has the same missing-session-environment issue; running it through the graphical user's systemd environment (for example `systemd-run --user --collect --wait hyprctl reload`) works.
+
 ## TODO
 
 - [x] Bootstrap Rust/Ratatui project and simple SSH `cargo deploy` workflow.
 - [x] Add simple target bootstrap/setup script and document runtime assumptions.
 - [x] Get the first recognizable Finnish Momarchy Home on screen: big actions, mouse/keyboard navigation, `Pelit` and `Apua` subviews.
+- [x] Launch Momarchy Home automatically with the Omarchy/Hyprland session; keep `ESC` as the maintenance escape and `Super+M` as a reliable way back Home.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, text size, focus, wording and real actions on the 13-inch target.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
