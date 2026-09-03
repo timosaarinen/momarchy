@@ -1,58 +1,88 @@
 # Momarchy
 
-**Omarchy for people who don't want to use a computer.**
+A small side project: make an old laptop simple enough that my mom can just use it.
 
-Momarchy is an experiment in turning an Omarchy Linux installation into a simple, resilient, appliance-like laptop for a non-technical user.
+The current idea is to use [Omarchy](https://omarchy.org/) as the Linux base, then hide almost all of the computer-y parts behind **Momarchy Home**: a tiny full-screen UI with a few obvious things to do. User-facing text is Finnish; code, CLI, docs and configuration stay English.
 
-The target experience is deliberately boring:
+The slightly ridiculous first real deployment target is a **13-inch MacBook Pro from 2009** with a Core 2 Duo, 2 GB RAM and GeForce 9400M. Omarchy 4.0.2 installed and booted on it just fine. That makes low memory, old CPUs and boring reliability real design constraints instead of hypothetical ones.
 
-- boot the laptop
-- see a small set of obvious things to do
-- click large, understandable controls
-- avoid Linux terminology and configuration
-- require essentially no routine maintenance from the user
-- remain remotely recoverable by a trusted administrator
+Current implementation direction: **Rust + Ratatui TUI**, built on a newer computer and deployed as a small binary over SSH/Tailscale. The source repo and Rust toolchain do not need to exist on the Momarchy laptop.
 
-The first target machine is an old Lenovo IdeaPad Y500 (Core i7-3630QM, 8 GB RAM, dual-GPU-era hardware and a questionable 1 TB HDD), so graceful operation on imperfect old hardware is part of the project rather than an edge case.
+## Try the current scaffold
 
-## Principles
+Requires a current stable Rust toolchain. Ratatui 0.30 currently requires Rust 1.88+.
 
-1. **Appliance, not desktop.** The user should not need to understand Omarchy, Hyprland, Arch, package managers, workspaces, terminals, or dotfiles.
-2. **Public and reproducible.** This repository contains no personal credentials or secrets. A fresh Omarchy system should be transformable into Momarchy from public code and configuration.
-3. **Local secrets stay local.** Wi-Fi credentials, browser sessions, Tailscale authentication and personal data are never committed.
-4. **Big obvious actions beat flexibility.** A few useful choices are better than a general-purpose launcher.
-5. **Failure should be understandable.** If networking, storage or another essential service fails, Momarchy should say what happened in plain language and offer one obvious recovery action where possible.
-6. **Remote recovery is first-class.** The administrator should be able to diagnose and repair the machine without requiring the user to operate a terminal.
-7. **Updates must not casually break the appliance.** Prefer stable, reversible changes and retain a recovery path.
-
-## Initial direction
-
-The intended stack is:
-
-- Omarchy as the underlying Linux system
-- Quickshell / Omarchy shell customization for the Momarchy home experience
-- browser/web apps for most user-facing services
-- Tailscale for remote administration
-- a small set of scripts for installation, health checks and recovery
-
-The exact UI is intentionally not designed yet. First milestone is proving the target hardware can boot and run a current Linux/Omarchy environment reliably.
-
-## Repository layout
-
-```text
-momarchy/
-├── README.md
-├── install.sh
-├── config/          # Momarchy-managed configuration
-├── home/            # Home/start screen implementation
-├── scripts/         # Setup, diagnostics and recovery helpers
-└── docs/            # Design notes and hardware/recovery documentation
+```bash
+git clone https://github.com/timosaarinen/momarchy.git
+cd momarchy
+cargo run -- status
+cargo run -- home
 ```
 
-## Status
+`home` is intentionally only the first interactive TUI skeleton. The useful part now is proving the shape of the project and deployment workflow before adding features.
 
-Very early sidequest. The current work is hardware archaeology and compatibility testing before we commit to an installation strategy.
+Remote deployment is project-local Cargo automation:
 
-## Security
+```bash
+cargo deploy t@momarchy
+```
 
-This is a public repository. Do not commit passwords, tokens, private keys, cookies, personal data or machine-specific credentials.
+That builds a release binary, copies it over SSH to `~/.local/bin/momarchy`, atomically replaces the previous binary and runs `momarchy status` remotely. No Git checkout or Rust compiler is needed on the target.
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/deployment rules and [docs/HARDWARE.md](docs/HARDWARE.md) for hardware archaeology.
+
+## Dev diary
+
+### 2026-09-01 — Day 1
+
+- Had been thinking about installing Omarchy for my own use on an old gaming laptop; dug it out and it still booted, slowly :D
+- Got the sidequest idea: what if I donate a pre-installed super-simple Omarchy laptop to my mom?
+- First candidate was an ancient HP; no charger handy, so archaeology paused immediately.
+- Next candidate: Lenovo IdeaPad Y500, my old dual-GPU gaming laptop. Much more power, much more gamer laptop.
+- Y500 HDD made suspicious noises, smelled a bit hot/burny on first start, then booted old Windows after some traditional percussive maintenance :D
+- Started rescuing old Windows archaeology before touching the disk.
+- Made a Ventoy USB for Mint / Omarchy / rescue stuff instead of reflashing one ISO at a time.
+- Created this public `momarchy` repo. Public/reproducible is useful anyway; secrets stay on the actual machine.
+
+### 2026-09-02 — Day 2
+
+- Remembered I also have a much nicer Momarchy candidate lying around: old 13-inch MacBook Pro from 2009.
+- Cleaned enough old macOS cruft to get ~64 GB free and carved out ~50 GB for Linux while keeping El Capitan as archaeology/fallback.
+- Ventoy 1.1.17 froze in old Apple EFI, so went simpler and flashed the Omarchy 4.0.2 ISO directly.
+- Omarchy USB booted. Okay, this became interesting.
+
+### 2026-09-03 — Day 3
+
+- Omarchy 4.0.2 installed on the 2009 MacBook in 12m 56s and preserved the old macOS install. Not bad for ancient hardware.
+- It booted straight into Omarchy without needing Option/EFI boot babysitting. Props to DHH + Omarchy team.
+- Hardware: Core 2 Duo P7350 2.0 GHz, 2 GB RAM, NVIDIA C79/GeForce 9400M on `nouveau`, Broadcom BCM4322 Wi-Fi.
+- Good ol' Apple hardware: sensors, fan control, battery, keyboard/trackpad and graphics all basically just work; battery still reports ~95% of design capacity (!).
+- Broadcom Wi-Fi is still an open investigation; Ethernet works.
+- Omarchy itself leaves roughly ~900 MB available after boot. Chrome homepage ~800 MB available; scrolling a real `is.fi` page stayed around ~500 MB available. Tight, but surprisingly usable.
+- Chrome Memory Saver on; normal operation should avoid swap even though swap stays available as the emergency cushion.
+- Voxtype looked promising for mom-friendly speech input, then immediately died on an AVX2 illegal instruction. Old CPU build later :D
+- Enabled SSH through Omarchy/UFW; `ssh t@momarchy` works from the desktop, so the MacBook is now a deployment target instead of a development machine.
+- Confirmed lid-close can be temporarily inhibited while SSH stays alive; Apple SMC sensors work nicely from Linux.
+- Considered HTML, Tauri and terminal UI for Momarchy Home. Naturally ended at: rewrite it in Rust and make it a TUI.
+- Decided the source repo/compiler stay on newer machines; Momarchy targets get tiny deployed artifacts over SSH/Tailscale.
+
+## TODO
+
+- [ ] Make the Rust/Ratatui Momarchy Home actually useful; huge, obvious, mouse-first controls with Finnish UI text.
+- [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
+- [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
+- [ ] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook.
+- [ ] Create separate admin/maintenance user; keep mom account boring, non-admin and eventually auto-login.
+- [ ] Add Tailscale for remote maintenance and deployment outside the LAN.
+- [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
+- [ ] Add simple target bootstrap/setup script and keep required runtime dependencies documented.
+- [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
+- [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no AI/model/provider jargon in mom UI.
+- [ ] Rebuild/evaluate Voxtype for the Core 2 Duo; speech input could be genuinely useful here.
+- [ ] `Katso televisiosta`: investigate Chromecast flow for YouTube, Yle Areena and other useful Finnish streams.
+- [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
+- [ ] Keep Q4OS Trinity / other lean GUI Linux as fallback if Omarchy eventually becomes too much for 2 GB.
+
+## One rule
+
+If Linux already has a good tool for something, use it. Momarchy code is for the Momarchy-specific parts.
