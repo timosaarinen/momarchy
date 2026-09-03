@@ -19,7 +19,7 @@ cargo run -- status
 cargo run -- home
 ```
 
-`home` is intentionally only the first interactive TUI skeleton. The useful part now is proving the shape of the project and deployment workflow before adding features.
+`home` now has the first real Finnish Momarchy Home screen with mouse/keyboard navigation, `Pelit` and `Apua` subviews, and safe dry-run host actions. Development runs do not launch external programs unless explicitly started with `--live-actions`.
 
 Remote deployment is project-local Cargo automation:
 
@@ -68,22 +68,24 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Bootstrapped the real Rust project: Ratatui/Crossterm Home skeleton, `momarchy status`, `cargo deploy` over SSH and a tiny target bootstrap script.
 - Found the Chromecast too, a 2021/01-era unit. Momarchy bundle is now shaping up as MacBook + Chromecast, both preconfigured before handoff.
 - Added a low-priority `Pelit` idea: tiny TUI games, starting with an original falling-block game and maybe Snake. Mom still likes that old Game Boy style of play :)
+- First proper Home pass: eight big Finnish actions, mouse/keyboard navigation, `Pelit` with Palikat/Mato placeholders, `Apua`, dry-run host actions and a tiny stdin/stdout automation mode.
 
 ## TODO
 
 - [x] Bootstrap Rust/Ratatui project and simple SSH `cargo deploy` workflow.
 - [x] Add simple target bootstrap/setup script and document runtime assumptions.
-- [ ] Make the Rust/Ratatui Momarchy Home actually useful; huge, obvious, mouse-first controls with Finnish UI text.
+- [x] Get the first recognizable Finnish Momarchy Home on screen: big actions, mouse/keyboard navigation, `Pelit` and `Apua` subviews.
+- [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, text size, focus, wording and real actions on the 13-inch target.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
-- [ ] Put all host-affecting actions behind one tiny execution boundary so Home selection code never launches processes directly.
-- [ ] Make development actions dry-run by default: show/log the action category + command instead of launching it; target config enables live actions, with explicit `--live-actions` / `--dry-run` overrides and an obvious DEV banner.
-- [ ] Keep Home state/actions independent from the real terminal backend so humans and automation drive the same state machine.
-- [ ] Add `momarchy home --automation`: deterministic terminal size, no raw mode/mouse capture/animations, line commands on stdin and deterministic state/action snapshots on stdout; diagnostics stay on stderr.
-- [ ] Automation should support stable semantic commands (`select games`, `activate`) plus human-equivalent input (`key down`, `key enter`, optional `click x y`) for navigation/hitbox testing.
+- [x] Put current host-affecting actions behind one small execution boundary so Home selection code does not directly launch processes.
+- [x] Make development actions dry-run by default: show the action category + command instead of launching it; `--live-actions` / `--dry-run` override it and dry-run is obvious in the TUI.
+- [x] Keep current Home state/actions independent from the real terminal backend so humans and automation drive the same `App` state machine.
+- [x] Add the first `momarchy home --automation`: line commands on stdin and deterministic state/action snapshots on stdout, with no raw terminal or mouse capture.
+- [ ] Automation should support all useful stable semantic commands plus human-equivalent input, including optional `click x y` for hitbox testing.
 - [ ] Add an optional automation `render` command that dumps the whole virtual Ratatui frame from an in-memory backend when semantic state/actions are not enough.
-- [ ] Support prerecorded stdin playtests (`cat tests/foo.play | momarchy home --automation`) so agents/scripts can run complete Home flows without a graphical test harness.
+- [x] Support prerecorded stdin flows (`cat tests/foo.play | momarchy home --automation`) so scripts can run Home flows without a graphical test harness; add real regression playtests next.
 - [ ] Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
 - [ ] Finish Broadcom BCM4322 Wi-Fi on the 2009 MacBook.
 - [ ] Create separate admin/maintenance user; keep mom account boring, non-admin and eventually auto-login.
@@ -93,7 +95,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no technical backend jargon in mom UI.
 - [ ] Rebuild/evaluate Voxtype for the Core 2 Duo; speech input could be genuinely useful here.
 - [ ] `Katso televisiosta`: make the found Chromecast useful from Momarchy; test YouTube, Yle Areena and other useful Finnish streams.
-- [ ] `Pelit`: optional tiny TUI games; start with an original falling-block game and maybe Snake. Low priority, keep it simple and legally distinct from commercial classics.
+- [ ] `Pelit`: evaluate existing open-source terminal games first; integrate/fork only mom-worthy ones. Palikat + Mato are the first targets.
 - [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
 - [ ] Keep Q4OS Trinity / other lean GUI Linux as fallback if Omarchy eventually becomes too much for 2 GB.
 
