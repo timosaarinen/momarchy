@@ -14,7 +14,7 @@ These are the short version of the steps that worked here:
 
 1. **Back up anything you care about.** I kept the old OS X El Capitan install as archaeology/fallback instead of wiping the disk.
 2. **Make some free space from macOS.** I created about 50 GB with Disk Utility, then deleted that temporary HFS+ partition in the Omarchy installer's partition tool so the space was truly unallocated. If you do not care about keeping macOS, the whole-disk install is obviously simpler.
-3. **Flash the Omarchy ISO directly to a USB stick.** Ventoy 1.1.17 froze on this old Apple EFI after selecting `EFI Boot`; a directly flashed Omarchy 4.0.2 ISO booted fine.
+3. **Flash the Omarchy ISO directly to a USB stick.** Ventoy 1.1.17 froze on old Apple EFI after selecting `EFI Boot`; a directly flashed Omarchy 4.0.2 ISO booted fine.
 4. **Boot the USB and install Omarchy into the unallocated space.** On this machine the install took 12m 56s, preserved El Capitan, and after installation a normal reboot went straight into Omarchy without needing Option-key boot selection.
 5. **Fix the built-in Broadcom Wi-Fi.** The kernel already detects the BCM4322 with `b43`, but the firmware is missing. Use Ethernet for the first boot and install:
 
@@ -209,10 +209,10 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added a single global Lua theme for layout, colors and borders. Ratatui now follows theme columns/gap/margin and configured colors/border style; keyboard navigation follows the chosen column count. No per-button styling, selectors, classes or CSS cascade
 - Kept backwards compatibility: existing normalized version-1 Lua configs still load, while new configs can `require("momarchy.ui")` from the binary with no extra runtime file to install
 - Made the repo Lua files the explicit development/deployment source of truth: `cargo home` stages the checked-out `lua/init.lua` into an isolated dev config, while `cargo deploy` replaces the target binary and repo-managed Lua files and validates Home through the automation interface
+- Made browser actions use Omarchy's own `omarchy-launch-browser` instead of pretending `xdg-open` owns the lifecycle. Home stays resident underneath while Omarchy launches/detaches the configured browser; Hyprland owns focus, so closing the browser naturally returns to Home. A missing Omarchy helper falls back to `xdg-open`, and macOS live development uses `open`
 
 ## TODO
 
-- [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
 - [ ] Verify live inotify config reload, bad-edit recovery and normal boot -> Home behavior on the actual MBP13.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
