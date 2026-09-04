@@ -1,7 +1,7 @@
 use std::{
     env,
     path::{Path, PathBuf},
-    process::{Command, ExitCode},
+    process::{Command, ExitCode, Stdio},
 };
 
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -77,7 +77,7 @@ fn build_release(root: &Path, cargo: &str) -> Result<PathBuf, String> {
                 "macOS deployment needs Zig for the Linux cross-linker; install it once with `brew install zig`",
             )?;
             require_command(
-                Command::new(cargo).args(["zigbuild", "--version"]),
+                Command::new(cargo).args(["zigbuild", "--help"]),
                 "macOS deployment needs cargo-zigbuild; install it once with `cargo install --locked cargo-zigbuild`",
             )?;
 
@@ -112,7 +112,11 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn require_command(command: &mut Command, message: &str) -> Result<(), String> {
-    match command.status() {
+    match command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
         Ok(status) if status.success() => Ok(()),
         _ => Err(message.into()),
     }
