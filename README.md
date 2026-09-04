@@ -160,6 +160,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 
 - [ ] Deploy the Lua-configured Home build to the real 2009 MacBook and verify first-run materialization, live inotify reload, bad-edit recovery and normal boot -> Home behavior on the actual target.
 - [ ] Define an explicit config update/reset/migration path before Momarchy's default Lua or config schema starts changing; existing admin config must remain authoritative and must never be silently replaced by a binary update.
+- [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz before changing drivers.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, text size, focus, wording and real actions on the 13-inch target.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
