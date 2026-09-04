@@ -139,9 +139,22 @@ fn write_home_module(config_dir: &Path, label: &str) {
 }
 
 fn run_home_automation(config_home: &Path, input: &str) -> Output {
-    let (mut child, mut stdin, _stdout) = spawn_home_automation(config_home);
-    stdin.write_all(input.as_bytes()).unwrap();
-    drop(stdin);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_momarchy"))
+        .args(["home", "--automation"])
+        .env("XDG_CONFIG_HOME", config_home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+
     child.wait_with_output().unwrap()
 }
 
