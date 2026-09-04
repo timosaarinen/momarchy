@@ -32,7 +32,11 @@ pub struct Options {
 
 pub fn run(options: Options) -> io::Result<()> {
     let initial = config::initialize()?;
-    let mut app = App::new(initial.config, options.live_actions, initial.warning);
+    let mut app = App::new(
+        initial.config,
+        options.live_actions,
+        initial.used_embedded_fallback,
+    );
 
     if options.automation {
         return run_automation(&mut app, &initial.path);
@@ -61,7 +65,7 @@ enum RuntimeEvent {
     Terminal(Event),
     TerminalFailed(String),
     ConfigChanged,
-    WatchFailed(String),
+    WatchFailed,
 }
 
 struct App {
@@ -75,14 +79,20 @@ struct App {
 }
 
 impl App {
-    fn new(config: Config, live_actions: bool, warning: Option<String>) -> Self {
+    fn new(config: Config, live_actions: bool, used_embedded_fallback: bool) -> Self {
         let screen = config.home.clone();
+        let status = if used_embedded_fallback {
+            "Asetuksissa on virhe. Käytetään turvallisia oletusasetuksia.".to_owned()
+        } else {
+            "Valitse hiirellä tai nuolinäppäimillä.".to_owned()
+        };
+
         Self {
             config,
             screen,
             selected: 0,
             button_areas: Vec::new(),
-            status: warning.unwrap_or_else(|| "Valitse hiirellä tai nuolinäppäimillä.".to_owned()),
+            status,
             exit: false,
             live_actions,
         }
@@ -99,7 +109,10 @@ impl App {
         watch::spawn(config_dir, move |event| {
             let event = match event {
                 WatchEvent::ConfigChanged => RuntimeEvent::ConfigChanged,
-                WatchEvent::Failed(error) => RuntimeEvent::WatchFailed(error),
+                WatchEvent::Failed(error) => {
+                    eprintln!("momarchy: config watcher failed: {error}");
+                    RuntimeEvent::WatchFailed
+                }
             };
             let _ = watch_sender.send(event);
         })?;
@@ -113,8 +126,8 @@ impl App {
                     return Err(io::Error::other(format!("terminal input failed: {error}")));
                 }
                 Ok(RuntimeEvent::ConfigChanged) => self.reload_config(config_path),
-                Ok(RuntimeEvent::WatchFailed(error)) => {
-                    self.status = format!("Asetusten automaattinen päivitys ei toimi: {error}");
+                Ok(RuntimeEvent::WatchFailed) => {
+                    self.status = "Asetusten automaattinen päivitys ei toimi.".to_owned();
                 }
                 Err(_) => return Err(io::Error::other("Momarchy event sources stopped")),
             }
@@ -174,9 +187,16 @@ impl App {
     }
 
     fn render_buttons(&mut self, frame: &mut Frame, area: Rect) {
-        let buttons = self.buttons().to_vec();
-        self.button_areas.clear();
-        self.button_areas.resize(buttons.len(), Rect::default());
+        let selected = self.selected;
+        let buttons = &self
+            .config
+            .screen(&self.screen)
+            .expect("current screen must exist in validated config")
+            .buttons;
+        let button_areas = &mut self.button_areas;
+
+        button_areas.clear();
+        button_areas.resize(buttons.len(), Rect::default());
 
         let rows_count = buttons.len().div_ceil(2);
         let row_constraints = vec![Constraint::Ratio(1, rows_count as u32); rows_count];
@@ -197,10 +217,10 @@ impl App {
                     continue;
                 }
 
-                self.button_areas[index] = *button_area;
+                button_areas[index] = *button_area;
                 let button = &buttons[index];
-                let selected = index == self.selected;
-                let style = if selected {
+                let is_selected = index == selected;
+                let style = if is_selected {
                     Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
                 } else {
                     Style::default()
@@ -374,7 +394,11 @@ impl App {
                 self.status = "Asetukset päivitetty.".to_owned();
             }
             Err(error) => {
-                self.status = format!("Asetusvirhe — vanhat asetukset säilytettiin: {error}");
+                eprintln!(
+                    "momarchy: could not reload {}: {error}; keeping previous config",
+                    config_path.display()
+                );
+                self.status = "Asetusvirhe — vanhat asetukset säilytettiin.".to_owned();
             }
         }
     }
