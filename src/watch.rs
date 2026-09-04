@@ -90,6 +90,7 @@ fn is_relevant(event: &inotify::Event<'_>) -> bool {
         .is_some_and(|name| is_lua_name(name.to_bytes()))
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn is_lua_name(name: &[u8]) -> bool {
     name.ends_with(b".lua")
 }
