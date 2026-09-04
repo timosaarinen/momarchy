@@ -2,7 +2,65 @@
   <img src="docs/images/momarchy-logo.png" alt="Momarchy" width="100%">
 </p>
 
-A small side project: make an old laptop simple enough that my mom can just use it.
+Momarchy is a small open-source side project: make an old laptop simple enough that my mom can just use it.
+
+**Very early development phase (4 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
+
+## I don't want your crappy in-progress auto-load Momarchy Home, just tell me how to get standard Omarchy on my 2009 MacBook
+
+Good news: plain [Omarchy](https://omarchy.org/) 4.0.2 works surprisingly well on the current reference machine, a **13-inch MacBook Pro from 2009** (Core 2 Duo P7350, 2 GB RAM, GeForce 9400M, Broadcom BCM4322 Wi-Fi).
+
+These are the short version of the steps that worked here:
+
+1. **Back up anything you care about.** I kept the old OS X El Capitan install as archaeology/fallback instead of wiping the disk.
+2. **Make some free space from macOS.** I created about 50 GB with Disk Utility, then deleted that temporary HFS+ partition in the Omarchy installer's partition tool so the space was truly unallocated. If you do not care about keeping macOS, the whole-disk install is obviously simpler.
+3. **Flash the Omarchy ISO directly to a USB stick.** Ventoy 1.1.17 froze on this old Apple EFI after selecting `EFI Boot`; a directly flashed Omarchy 4.0.2 ISO booted fine.
+4. **Boot the USB and install Omarchy into the unallocated space.** On this machine the install took 12m 56s, preserved El Capitan, and after installation a normal reboot went straight into Omarchy without needing Option-key boot selection.
+5. **Fix the built-in Broadcom Wi-Fi.** The kernel already detects the BCM4322 with `b43`, but the firmware is missing. Use Ethernet for the first boot and install:
+
+   ```bash
+   yay -S b43-firmware
+   reboot
+   ```
+
+   After reboot, `wlan0` appears and NetworkManager can use the built-in Wi-Fi normally. There has been no reason to switch to proprietary `broadcom-wl`.
+6. **Fix the old Apple Num Lock quirk if needed.** If `j` becomes `1`, `k` becomes `2`, etc., plain `F6` toggles Num Lock off. To make it permanent for this machine, put this in `~/.config/hypr/input.lua`:
+
+   ```lua
+   hl.config({ input = { numlock_by_default = false } })
+   ```
+
+That's basically it. Omarchy itself boots and runs on 2 GB RAM; that is tight, but Chrome and normal desktop use have been surprisingly usable so far.
+
+### Optional: SSH for remote admin
+
+If this is going to be a family computer, remote maintenance is handy. Enable SSH and let it through UFW:
+
+```bash
+sudo systemctl enable --now sshd
+sudo ufw allow ssh
+```
+
+Then, from your admin machine, copy your SSH key and connect:
+
+```bash
+ssh-copy-id <user>@<macbook-hostname-or-ip>
+ssh <user>@<macbook-hostname-or-ip>
+```
+
+For remote administration outside the local network, Tailscale also works cleanly on this hardware:
+
+```bash
+sudo pacman -S tailscale
+sudo systemctl enable --now tailscaled
+sudo tailscale up --accept-routes
+```
+
+After joining the machine to your tailnet, normal SSH works over its Tailscale address without public port forwarding.
+
+More hardware details and archaeology live in [docs/HARDWARE.md](docs/HARDWARE.md).
+
+## Idea / status
 
 The current idea is to use [Omarchy](https://omarchy.org/) as the Linux base, then hide almost all of the computer-y parts behind **Momarchy Home**: a tiny full-screen UI with a few obvious things to do. User-facing text is Finnish; code, CLI, docs and configuration stay English.
 
