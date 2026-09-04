@@ -149,9 +149,17 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added minimal device-level Tailscale instead of Omarchy's optional desktop extras: installed the `tailscale` package, enabled `tailscaled`, joined the existing tailnet with `tailscale up --accept-routes`, and skipped operator grants, Taildrop receiver, bar widget and admin-console webapp because Momarchy does not need them
 - Confirmed ordinary users can read `tailscale status` without extra privileges, while configuration changes can simply keep using `sudo` when needed
 - Final remote-support proof: connected to `tims` over the MacBook's Tailscale IP from another tailnet machine using the existing SSH key. No public port forwarding needed. Remote maintenance outside mom's LAN is now working.
+- Moved the fast-changing Momarchy Home content/configuration out of compile-time Rust and into Lua while keeping Rust + Ratatui as the small stable appliance engine
+- Vendored Lua 5.4 into the executable, so deployment is still one small binary with no separate Lua runtime to install; current release build is about 993 KiB
+- Added embedded `lua/init.lua` as the known-good default. First Home run atomically materializes it as `~/.config/momarchy/init.lua`; after that the file belongs to the machine administrator and Momarchy never silently overwrites it
+- Added event-driven Linux inotify hot reload for `.lua` config files — no timer polling. Every reload gets a fresh Lua VM, so normal `require()` modules can be edited and reloaded without stale module state
+- Bad live Lua edits keep the last valid UI running; a bad config on cold start falls back to the embedded known-good config in memory without destroying the broken admin file
+- Added binary/inotify/config tests and checked the whole thing against the Rust 1.88 floor: 10 tests, strict Clippy and release build green; `ldd` confirms the executable has no system Lua dependency
 
 ## TODO
 
+- [ ] Deploy the Lua-configured Home build to the real 2009 MacBook and verify first-run materialization, live inotify reload, bad-edit recovery and normal boot -> Home behavior on the actual target.
+- [ ] Define an explicit config update/reset/migration path before Momarchy's default Lua or config schema starts changing; existing admin config must remain authoritative and must never be silently replaced by a binary update.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, text size, focus, wording and real actions on the 13-inch target.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
