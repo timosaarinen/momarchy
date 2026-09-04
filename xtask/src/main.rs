@@ -37,11 +37,12 @@ fn deploy(target: &str) -> Result<(), String> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
 
     println!("==> building Momarchy release");
-    run(
-        Command::new(cargo)
-            .current_dir(&root)
-            .args(["build", "--release", "--package", "momarchy"]),
-    )?;
+    run(Command::new(cargo).current_dir(&root).args([
+        "build",
+        "--release",
+        "--package",
+        "momarchy",
+    ]))?;
 
     let binary = root.join("target/release/momarchy");
     if !binary.is_file() {
@@ -49,7 +50,9 @@ fn deploy(target: &str) -> Result<(), String> {
     }
 
     println!("==> preparing {target}");
-    run(Command::new("ssh").arg(target).arg("mkdir -p \"$HOME/.local/bin\""))?;
+    run(Command::new("ssh")
+        .arg(target)
+        .arg("mkdir -p \"$HOME/.local/bin\""))?;
 
     println!("==> uploading {}", binary.display());
     let remote_staging = format!("{target}:~/.local/bin/momarchy.new");

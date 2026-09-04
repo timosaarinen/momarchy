@@ -33,7 +33,11 @@ fn main() -> ExitCode {
                         print_home_help();
                         return ExitCode::SUCCESS;
                     }
-                    _ => return fail(&format!("unknown home option: {arg}\n\nRun 'momarchy home --help'.")),
+                    _ => {
+                        return fail(&format!(
+                            "unknown home option: {arg}\n\nRun 'momarchy home --help'."
+                        ));
+                    }
                 }
             }
 
@@ -42,7 +46,9 @@ fn main() -> ExitCode {
                 Err(error) => fail(&format!("home failed: {error}")),
             }
         }
-        Some(command) => fail(&format!("unknown command: {command}\n\nRun 'momarchy --help'.")),
+        Some(command) => fail(&format!(
+            "unknown command: {command}\n\nRun 'momarchy --help'."
+        )),
     }
 }
 

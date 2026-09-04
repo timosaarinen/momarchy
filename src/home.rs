@@ -6,14 +6,17 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+        MouseEventKind,
+    },
     execute,
 };
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
-    DefaultTerminal, Frame,
 };
 
 use crate::{
@@ -319,10 +322,7 @@ impl App {
                     Command::new(&program).args(&args).spawn()?;
                     self.status = live_message;
                 } else {
-                    self.status = format!(
-                        "KEHITYSTILA — {kind}: {program} {}",
-                        args.join(" ")
-                    );
+                    self.status = format!("KEHITYSTILA — {kind}: {program} {}", args.join(" "));
                 }
             }
         }
@@ -352,7 +352,10 @@ impl App {
     }
 
     fn reload_config(&mut self, config_path: &Path) {
-        let selected_id = self.buttons().get(self.selected).map(|button| button.id.clone());
+        let selected_id = self
+            .buttons()
+            .get(self.selected)
+            .map(|button| button.id.clone());
         let previous_screen = self.screen.clone();
 
         match config::load(config_path) {
@@ -378,7 +381,11 @@ impl App {
 
     fn write_snapshot(&self, out: &mut impl Write) -> io::Result<()> {
         writeln!(out, "SCREEN {}", self.screen)?;
-        writeln!(out, "MODE {}", if self.live_actions { "live" } else { "dry-run" })?;
+        writeln!(
+            out,
+            "MODE {}",
+            if self.live_actions { "live" } else { "dry-run" }
+        )?;
         writeln!(out, "SELECTED {}", self.buttons()[self.selected].id)?;
         writeln!(out, "ACTIONS")?;
         for button in self.buttons() {
@@ -401,16 +408,18 @@ fn spawn_terminal_reader(sender: Sender<RuntimeEvent>) -> io::Result<()> {
     std::thread::Builder::new()
         .name("momarchy-terminal-input".to_owned())
         .stack_size(256 * 1024)
-        .spawn(move || loop {
-            match event::read() {
-                Ok(event) => {
-                    if sender.send(RuntimeEvent::Terminal(event)).is_err() {
+        .spawn(move || {
+            loop {
+                match event::read() {
+                    Ok(event) => {
+                        if sender.send(RuntimeEvent::Terminal(event)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = sender.send(RuntimeEvent::TerminalFailed(error.to_string()));
                         break;
                     }
-                }
-                Err(error) => {
-                    let _ = sender.send(RuntimeEvent::TerminalFailed(error.to_string()));
-                    break;
                 }
             }
         })?;

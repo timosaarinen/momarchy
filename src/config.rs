@@ -83,12 +83,13 @@ pub fn initialize() -> io::Result<InitialConfig> {
             warning: None,
         }),
         Err(error) => {
-            let config = load_source(DEFAULT_INIT_LUA, config_dir, "<embedded init.lua>")
-                .map_err(|fallback| {
+            let config = load_source(DEFAULT_INIT_LUA, config_dir, "<embedded init.lua>").map_err(
+                |fallback| {
                     io::Error::other(format!(
                         "user config failed ({error}); embedded config also failed ({fallback})"
                     ))
-                })?;
+                },
+            )?;
 
             Ok(InitialConfig {
                 config,
@@ -122,7 +123,11 @@ fn ensure_user_config() -> io::Result<PathBuf> {
         return Ok(path);
     }
 
-    match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
         Ok(mut file) => {
             file.write_all(DEFAULT_INIT_LUA.as_bytes())?;
             file.sync_all()?;
@@ -192,10 +197,7 @@ fn configure_package_path(lua: &Lua, config_dir: &Path) -> Result<(), String> {
     let dir = config_dir.to_string_lossy();
 
     package
-        .set(
-            "path",
-            format!("{dir}/?.lua;{dir}/?/init.lua;{existing}"),
-        )
+        .set("path", format!("{dir}/?.lua;{dir}/?/init.lua;{existing}"))
         .map_err(|error| format!("could not configure Lua package.path: {error}"))
 }
 
@@ -209,7 +211,8 @@ fn parse_screen(id: String, table: Table, source_name: &str) -> Result<Screen, S
     let mut buttons = Vec::new();
 
     for value in buttons_table.sequence_values::<Table>() {
-        let table = value.map_err(|error| format!("{source_name}: screen {id}.buttons: {error}"))?;
+        let table =
+            value.map_err(|error| format!("{source_name}: screen {id}.buttons: {error}"))?;
         buttons.push(parse_button(&id, table, source_name)?);
     }
 
