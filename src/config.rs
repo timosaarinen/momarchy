@@ -5,14 +5,81 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use mlua::{Lua, Table};
+use mlua::{Lua, Table, Value, Variadic};
 
 pub const DEFAULT_INIT_LUA: &str = include_str!("../lua/init.lua");
+const UI_MODULE_LUA: &str = include_str!("../lua/momarchy/ui.lua");
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub home: String,
+    pub theme: Theme,
     pub screens: Vec<Screen>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Theme {
+    pub layout: ThemeLayout,
+    pub colors: ThemeColors,
+    pub border: ThemeBorder,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThemeLayout {
+    pub columns: u16,
+    pub gap: u16,
+    pub margin: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThemeColors {
+    pub background: ThemeColor,
+    pub text: ThemeColor,
+    pub muted: ThemeColor,
+    pub selected_background: ThemeColor,
+    pub selected_text: ThemeColor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeColor {
+    Black,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    Gray,
+    DarkGray,
+    White,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeBorder {
+    Plain,
+    Rounded,
+    Double,
+    Thick,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self {
+            layout: ThemeLayout {
+                columns: 2,
+                gap: 1,
+                margin: 1,
+            },
+            colors: ThemeColors {
+                background: ThemeColor::Black,
+                text: ThemeColor::White,
+                muted: ThemeColor::Gray,
+                selected_background: ThemeColor::White,
+                selected_text: ThemeColor::Black,
+            },
+            border: ThemeBorder::Rounded,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -174,7 +241,7 @@ fn user_config_path() -> io::Result<PathBuf> {
 
 fn load_source(source: &str, config_dir: &Path, source_name: &str) -> Result<Config, String> {
     let lua = Lua::new();
-    configure_package_path(&lua, config_dir)?;
+    configure_lua(&lua, config_dir)?;
 
     let root: Table = lua
         .load(source)
@@ -190,6 +257,11 @@ fn load_source(source: &str, config_dir: &Path, source_name: &str) -> Result<Con
     }
 
     let home: String = get(&root, "home", source_name)?;
+    let theme = parse_theme(
+        root.get::<Option<Table>>("theme")
+            .map_err(|error| format!("{source_name}: theme: {error}"))?,
+        source_name,
+    )?;
     let screens_table: Table = get(&root, "screens", source_name)?;
     let mut screens = Vec::new();
 
@@ -200,12 +272,16 @@ fn load_source(source: &str, config_dir: &Path, source_name: &str) -> Result<Con
 
     screens.sort_by(|left, right| left.id.cmp(&right.id));
 
-    let config = Config { home, screens };
+    let config = Config {
+        home,
+        theme,
+        screens,
+    };
     validate(&config, source_name)?;
     Ok(config)
 }
 
-fn configure_package_path(lua: &Lua, config_dir: &Path) -> Result<(), String> {
+fn configure_lua(lua: &Lua, config_dir: &Path) -> Result<(), String> {
     let package: Table = lua
         .globals()
         .get("package")
@@ -217,7 +293,147 @@ fn configure_package_path(lua: &Lua, config_dir: &Path) -> Result<(), String> {
 
     package
         .set("path", format!("{dir}/?.lua;{dir}/?/init.lua;{existing}"))
-        .map_err(|error| format!("could not configure Lua package.path: {error}"))
+        .map_err(|error| format!("could not configure Lua package.path: {error}"))?;
+
+    let preload: Table = package
+        .get("preload")
+        .map_err(|error| format!("could not access Lua package.preload: {error}"))?;
+    let loader = lua
+        .create_function(|lua, _: Variadic<Value>| {
+            lua.load(UI_MODULE_LUA)
+                .set_name("@momarchy.ui")
+                .eval::<Table>()
+        })
+        .map_err(|error| format!("could not create bundled momarchy.ui loader: {error}"))?;
+    preload
+        .set("momarchy.ui", loader)
+        .map_err(|error| format!("could not register bundled momarchy.ui: {error}"))
+}
+
+fn parse_theme(table: Option<Table>, source_name: &str) -> Result<Theme, String> {
+    let mut theme = Theme::default();
+    let Some(table) = table else {
+        return Ok(theme);
+    };
+
+    if let Some(layout) = table
+        .get::<Option<Table>>("layout")
+        .map_err(|error| format!("{source_name}: theme.layout: {error}"))?
+    {
+        if let Some(columns) = layout
+            .get::<Option<i64>>("columns")
+            .map_err(|error| format!("{source_name}: theme.layout.columns: {error}"))?
+        {
+            if !(1..=4).contains(&columns) {
+                return Err(format!(
+                    "{source_name}: theme.layout.columns must be between 1 and 4"
+                ));
+            }
+            theme.layout.columns = columns as u16;
+        }
+        if let Some(gap) = layout
+            .get::<Option<i64>>("gap")
+            .map_err(|error| format!("{source_name}: theme.layout.gap: {error}"))?
+        {
+            if !(0..=16).contains(&gap) {
+                return Err(format!(
+                    "{source_name}: theme.layout.gap must be between 0 and 16"
+                ));
+            }
+            theme.layout.gap = gap as u16;
+        }
+        if let Some(margin) = layout
+            .get::<Option<i64>>("margin")
+            .map_err(|error| format!("{source_name}: theme.layout.margin: {error}"))?
+        {
+            if !(0..=16).contains(&margin) {
+                return Err(format!(
+                    "{source_name}: theme.layout.margin must be between 0 and 16"
+                ));
+            }
+            theme.layout.margin = margin as u16;
+        }
+    }
+
+    if let Some(colors) = table
+        .get::<Option<Table>>("colors")
+        .map_err(|error| format!("{source_name}: theme.colors: {error}"))?
+    {
+        parse_optional_color(
+            &colors,
+            "background",
+            &mut theme.colors.background,
+            source_name,
+        )?;
+        parse_optional_color(&colors, "text", &mut theme.colors.text, source_name)?;
+        parse_optional_color(&colors, "muted", &mut theme.colors.muted, source_name)?;
+        parse_optional_color(
+            &colors,
+            "selected_background",
+            &mut theme.colors.selected_background,
+            source_name,
+        )?;
+        parse_optional_color(
+            &colors,
+            "selected_text",
+            &mut theme.colors.selected_text,
+            source_name,
+        )?;
+    }
+
+    if let Some(border) = table
+        .get::<Option<String>>("border")
+        .map_err(|error| format!("{source_name}: theme.border: {error}"))?
+    {
+        theme.border = parse_border(&border, source_name)?;
+    }
+
+    Ok(theme)
+}
+
+fn parse_optional_color(
+    table: &Table,
+    key: &str,
+    target: &mut ThemeColor,
+    source_name: &str,
+) -> Result<(), String> {
+    if let Some(value) = table
+        .get::<Option<String>>(key)
+        .map_err(|error| format!("{source_name}: theme.colors.{key}: {error}"))?
+    {
+        *target = parse_color(&value, source_name, key)?;
+    }
+    Ok(())
+}
+
+fn parse_color(value: &str, source_name: &str, key: &str) -> Result<ThemeColor, String> {
+    match value {
+        "black" => Ok(ThemeColor::Black),
+        "red" => Ok(ThemeColor::Red),
+        "green" => Ok(ThemeColor::Green),
+        "yellow" => Ok(ThemeColor::Yellow),
+        "blue" => Ok(ThemeColor::Blue),
+        "magenta" => Ok(ThemeColor::Magenta),
+        "cyan" => Ok(ThemeColor::Cyan),
+        "gray" | "grey" => Ok(ThemeColor::Gray),
+        "darkgray" | "darkgrey" | "dark_gray" | "dark_grey" => Ok(ThemeColor::DarkGray),
+        "white" => Ok(ThemeColor::White),
+        _ => Err(format!(
+            "{source_name}: unsupported theme.colors.{key} value {value:?}"
+        )),
+    }
+}
+
+fn parse_border(value: &str, source_name: &str) -> Result<ThemeBorder, String> {
+    match value {
+        "plain" => Ok(ThemeBorder::Plain),
+        "rounded" => Ok(ThemeBorder::Rounded),
+        "double" => Ok(ThemeBorder::Double),
+        "thick" => Ok(ThemeBorder::Thick),
+        _ => Err(format!(
+            "{source_name}: unsupported theme.border value {value:?}"
+        )),
+    }
 }
 
 fn parse_screen(id: String, table: Table, source_name: &str) -> Result<Screen, String> {
@@ -410,6 +626,94 @@ mod tests {
         let config = load_source(DEFAULT_INIT_LUA, Path::new("."), "embedded").unwrap();
         assert_eq!(config.home, "home");
         assert_eq!(config.screen("home").unwrap().buttons.len(), 8);
+        assert_eq!(config.theme.layout.columns, 2);
+        assert_eq!(config.theme.border, ThemeBorder::Rounded);
+    }
+
+    #[test]
+    fn bundled_ui_dsl_expands_to_normalized_config() {
+        let source = r#"
+            local ui = require("momarchy.ui")
+            return ui.app {
+              home = "home",
+              theme = { layout = { columns = 1 } },
+              screens = {
+                home = ui.screen {
+                  ui.title "Home",
+                  ui.subtitle "Test",
+                  ui.text "Hello",
+                  ui.button("next", "Next", "Go", ui.go "other"),
+                },
+                other = ui.screen {
+                  ui.title "Other",
+                  ui.button("back", "Back", "Return", ui.go "home"),
+                },
+              },
+            }
+        "#;
+
+        let config = load_source(source, Path::new("."), "test").unwrap();
+        assert_eq!(config.theme.layout.columns, 1);
+        let home = config.screen("home").unwrap();
+        assert_eq!(home.title, "Home");
+        assert_eq!(home.body.as_deref(), Some("Hello"));
+        assert_eq!(home.buttons[0].id, "next");
+    }
+
+    #[test]
+    fn normalized_version_one_config_remains_supported() {
+        let source = r#"
+            return {
+              version = 1,
+              home = "home",
+              screens = {
+                home = {
+                  title = "Home",
+                  subtitle = "Test",
+                  buttons = {
+                    {
+                      id = "ok",
+                      label = "OK",
+                      hint = "Works",
+                      action = { message = "Hi" },
+                    },
+                  },
+                },
+              },
+            }
+        "#;
+
+        let config = load_source(source, Path::new("."), "test").unwrap();
+        assert_eq!(config.theme, Theme::default());
+        assert_eq!(config.screen("home").unwrap().buttons.len(), 1);
+    }
+
+    #[test]
+    fn invalid_theme_value_is_rejected() {
+        let source = r#"
+            return {
+              version = 1,
+              home = "home",
+              theme = { border = "sparkly" },
+              screens = {
+                home = {
+                  title = "Home",
+                  subtitle = "Test",
+                  buttons = {
+                    {
+                      id = "ok",
+                      label = "OK",
+                      hint = "Works",
+                      action = { message = "Hi" },
+                    },
+                  },
+                },
+              },
+            }
+        "#;
+
+        let error = load_source(source, Path::new("."), "test").unwrap_err();
+        assert!(error.contains("theme.border"));
     }
 
     #[test]
