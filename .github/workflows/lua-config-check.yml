@@ -30,7 +30,7 @@ jobs:
 
       - name: Commit generated lockfile and formatting
         run: |
-          git add Cargo.lock src xtask
+          git add Cargo.lock src tests xtask
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -44,5 +44,13 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Build release binary
-        run: cargo build --release --package momarchy --locked
+      - name: Build and inspect release binary
+        run: |
+          cargo build --release --package momarchy --locked
+          target/release/momarchy status
+          stat --printf='release_size_bytes=%s\n' target/release/momarchy
+          ldd target/release/momarchy | tee /tmp/momarchy-ldd.txt
+          if grep -qi lua /tmp/momarchy-ldd.txt; then
+            echo 'release binary unexpectedly depends on a system Lua library' >&2
+            exit 1
+          fi
