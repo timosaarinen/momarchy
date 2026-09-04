@@ -4,6 +4,9 @@ use std::{
     process::{Command, ExitCode},
 };
 
+const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
+const ZIG_LINUX_TARGET: &str = "x86_64-unknown-linux-gnu.2.17";
+
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
 
@@ -29,22 +32,10 @@ fn main() -> ExitCode {
 }
 
 fn deploy(target: &str) -> Result<(), String> {
-    if env::consts::OS != "linux" {
-        return Err("deployment currently expects a Linux build host (WSL2 is fine)".into());
-    }
-
     let root = workspace_root()?;
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let binary = build_release(&root, &cargo)?;
 
-    println!("==> building Momarchy release");
-    run(Command::new(cargo).current_dir(&root).args([
-        "build",
-        "--release",
-        "--package",
-        "momarchy",
-    ]))?;
-
-    let binary = root.join("target/release/momarchy");
     if !binary.is_file() {
         return Err(format!("release binary not found: {}", binary.display()));
     }
@@ -67,11 +58,64 @@ fn deploy(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn build_release(root: &Path, cargo: &str) -> Result<PathBuf, String> {
+    match env::consts::OS {
+        "linux" => {
+            println!("==> building Momarchy release for Linux");
+            run(Command::new(cargo).current_dir(root).args([
+                "build",
+                "--release",
+                "--package",
+                "momarchy",
+            ]))?;
+
+            Ok(root.join("target/release/momarchy"))
+        }
+        "macos" => {
+            require_command(
+                Command::new("zig").arg("version"),
+                "macOS deployment needs Zig for the Linux cross-linker; install it once with `brew install zig`",
+            )?;
+            require_command(
+                Command::new(cargo).args(["zigbuild", "--version"]),
+                "macOS deployment needs cargo-zigbuild; install it once with `cargo install --locked cargo-zigbuild`",
+            )?;
+
+            println!("==> cross-building Momarchy release for Linux with Zig");
+            run(Command::new(cargo).current_dir(root).args([
+                "zigbuild",
+                "--release",
+                "--package",
+                "momarchy",
+                "--target",
+                ZIG_LINUX_TARGET,
+            ]))
+            .map_err(|error| {
+                format!(
+                    "{error}\nif the Rust Linux target is missing, install it once with `rustup target add {LINUX_TARGET}`"
+                )
+            })?;
+
+            Ok(root.join(format!("target/{LINUX_TARGET}/release/momarchy")))
+        }
+        host => Err(format!(
+            "unsupported deployment build host `{host}`; use Linux or macOS"
+        )),
+    }
+}
+
 fn workspace_root() -> Result<PathBuf, String> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| "could not find workspace root".into())
+}
+
+fn require_command(command: &mut Command, message: &str) -> Result<(), String> {
+    match command.status() {
+        Ok(status) if status.success() => Ok(()),
+        _ => Err(message.into()),
+    }
 }
 
 fn run(command: &mut Command) -> Result<(), String> {
