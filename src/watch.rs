@@ -81,11 +81,7 @@ fn is_lua_name(name: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        sync::mpsc,
-        time::Duration,
-    };
+    use std::{fs, sync::mpsc, time::Duration};
 
     use super::*;
 
