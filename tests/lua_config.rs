@@ -72,7 +72,13 @@ fn broken_cold_start_config_falls_back_without_overwriting_it() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("internet\tbrowser\tINTERNET\tAvaa selain"));
-    assert!(stdout.contains("STATUS Lua-asetuksessa on virhe."));
+    assert!(stdout.contains(
+        "STATUS Asetuksissa on virhe. Käytetään turvallisia oletusasetuksia."
+    ));
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("momarchy: could not load"));
+    assert!(stderr.contains("using embedded config"));
 
     cleanup(&root);
 }
