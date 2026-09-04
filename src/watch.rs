@@ -1,9 +1,4 @@
-use std::{
-    io,
-    mem::MaybeUninit,
-    path::Path,
-    sync::mpsc::Sender,
-};
+use std::{io, mem::MaybeUninit, path::Path};
 
 use rustix::{
     fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags},
@@ -16,22 +11,28 @@ pub enum WatchEvent {
     Failed(String),
 }
 
-pub fn spawn(config_dir: &Path, sender: Sender<WatchEvent>) -> io::Result<()> {
+pub fn spawn<F>(config_dir: &Path, notify: F) -> io::Result<()>
+where
+    F: Fn(WatchEvent) + Send + 'static,
+{
     let config_dir = config_dir.to_owned();
 
     std::thread::Builder::new()
         .name("momarchy-config-watch".to_owned())
         .stack_size(128 * 1024)
         .spawn(move || {
-            if let Err(error) = watch(&config_dir, &sender) {
-                let _ = sender.send(WatchEvent::Failed(error.to_string()));
+            if let Err(error) = watch(&config_dir, &notify) {
+                notify(WatchEvent::Failed(error.to_string()));
             }
         })?;
 
     Ok(())
 }
 
-fn watch(config_dir: &Path, sender: &Sender<WatchEvent>) -> io::Result<()> {
+fn watch<F>(config_dir: &Path, notify: &F) -> io::Result<()>
+where
+    F: Fn(WatchEvent),
+{
     let fd = inotify::init(CreateFlags::CLOEXEC).map_err(io::Error::from)?;
     inotify::add_watch(
         &fd,
@@ -59,8 +60,8 @@ fn watch(config_dir: &Path, sender: &Sender<WatchEvent>) -> io::Result<()> {
             }
         }
 
-        if changed && sender.send(WatchEvent::ConfigChanged).is_err() {
-            return Ok(());
+        if changed {
+            notify(WatchEvent::ConfigChanged);
         }
     }
 }
@@ -72,7 +73,11 @@ fn is_relevant(event: &inotify::Event<'_>) -> bool {
 
     event
         .file_name()
-        .is_some_and(|name| name.to_bytes().ends_with(b".lua"))
+        .is_some_and(|name| is_lua_name(name.to_bytes()))
+}
+
+fn is_lua_name(name: &[u8]) -> bool {
+    name.ends_with(b".lua")
 }
 
 #[cfg(test)]
@@ -81,7 +86,8 @@ mod tests {
 
     #[test]
     fn lua_suffix_filter_is_intentionally_narrow() {
-        assert!(b"init.lua".ends_with(b".lua"));
-        assert!(!b"init.lua.tmp".ends_with(b".lua"));
+        assert!(is_lua_name(b"init.lua"));
+        assert!(is_lua_name(b"home.lua"));
+        assert!(!is_lua_name(b"init.lua.tmp"));
     }
 }
