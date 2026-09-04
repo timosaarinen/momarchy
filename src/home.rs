@@ -15,12 +15,12 @@ use crossterm::{
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    style::{Color, Modifier, Style},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 
 use crate::{
-    config::{self, Action, Button, Config},
+    config::{self, Action, Button, Config, Theme, ThemeBorder, ThemeColor},
     watch::{self, WatchEvent},
 };
 
@@ -137,6 +137,11 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
+        let theme = self.config.theme.clone();
+        let frame_area = frame.area();
+        frame.render_widget(Block::default().style(base_style(&theme)), frame_area);
+
+        let area = inset(frame_area, theme.layout.margin);
         let areas = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -144,7 +149,7 @@ impl App {
                 Constraint::Min(16),
                 Constraint::Length(4),
             ])
-            .split(frame.area());
+            .split(area);
 
         let (title, subtitle, body) = {
             let screen = self.current_screen();
@@ -155,10 +160,22 @@ impl App {
             )
         };
 
-        let header = Paragraph::new(format!("{title}\n{subtitle}"))
+        let header_rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(0),
+            ])
+            .split(areas[0]);
+        let title = Paragraph::new(title)
             .alignment(Alignment::Center)
-            .style(Style::default().add_modifier(Modifier::BOLD));
-        frame.render_widget(header, areas[0]);
+            .style(base_style(&theme).add_modifier(Modifier::BOLD));
+        let subtitle = Paragraph::new(subtitle)
+            .alignment(Alignment::Center)
+            .style(muted_style(&theme));
+        frame.render_widget(title, header_rows[0]);
+        frame.render_widget(subtitle, header_rows[1]);
 
         if let Some(body) = body {
             let content_areas = Layout::default()
@@ -168,11 +185,12 @@ impl App {
 
             let body = Paragraph::new(body)
                 .alignment(Alignment::Center)
+                .style(base_style(&theme))
                 .wrap(Wrap { trim: true });
             frame.render_widget(body, content_areas[0]);
-            self.render_buttons(frame, content_areas[1]);
+            self.render_buttons(frame, content_areas[1], &theme);
         } else {
-            self.render_buttons(frame, areas[1]);
+            self.render_buttons(frame, areas[1], &theme);
         }
 
         let mode = if self.live_actions {
@@ -182,11 +200,12 @@ impl App {
         };
         let footer = Paragraph::new(format!("{mode}{}", self.status))
             .alignment(Alignment::Center)
+            .style(muted_style(&theme))
             .wrap(Wrap { trim: true });
         frame.render_widget(footer, areas[2]);
     }
 
-    fn render_buttons(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_buttons(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let selected = self.selected;
         let buttons = &self
             .config
@@ -195,46 +214,33 @@ impl App {
             .buttons;
         let button_areas = &mut self.button_areas;
 
-        button_areas.clear();
-        button_areas.resize(buttons.len(), Rect::default());
+        *button_areas = grid_areas(
+            area,
+            buttons.len(),
+            theme.layout.columns,
+            theme.layout.gap,
+        );
 
-        let rows_count = buttons.len().div_ceil(2);
-        let row_constraints = vec![Constraint::Ratio(1, rows_count as u32); rows_count];
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(row_constraints)
-            .split(area);
+        for (index, button_area) in button_areas.iter().copied().enumerate() {
+            let button = &buttons[index];
+            let is_selected = index == selected;
+            let style = if is_selected {
+                selected_style(theme).add_modifier(Modifier::BOLD)
+            } else {
+                base_style(theme)
+            };
 
-        for (row_index, row) in rows.iter().enumerate() {
-            let columns = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(*row);
-
-            for (column_index, button_area) in columns.iter().enumerate() {
-                let index = row_index * 2 + column_index;
-                if index >= buttons.len() {
-                    continue;
-                }
-
-                button_areas[index] = *button_area;
-                let button = &buttons[index];
-                let is_selected = index == selected;
-                let style = if is_selected {
-                    Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
-                } else {
-                    Style::default()
-                };
-
-                let block = Block::default().borders(Borders::ALL).style(style);
-                let text = format!("\n{}\n{}", button.label, button.hint);
-                let widget = Paragraph::new(text)
-                    .alignment(Alignment::Center)
-                    .block(block)
-                    .style(style)
-                    .wrap(Wrap { trim: true });
-                frame.render_widget(widget, *button_area);
-            }
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(border_type(theme.border))
+                .style(style);
+            let text = format!("\n{}\n{}", button.label, button.hint);
+            let widget = Paragraph::new(text)
+                .alignment(Alignment::Center)
+                .block(block)
+                .style(style)
+                .wrap(Wrap { trim: true });
+            frame.render_widget(widget, button_area);
         }
     }
 
@@ -246,6 +252,10 @@ impl App {
 
     fn buttons(&self) -> &[Button] {
         &self.current_screen().buttons
+    }
+
+    fn columns(&self) -> usize {
+        usize::from(self.config.theme.layout.columns)
     }
 
     fn handle_event(&mut self, event: Event) -> io::Result<()> {
@@ -278,26 +288,30 @@ impl App {
     }
 
     fn move_left(&mut self) {
-        if self.selected % 2 == 1 {
+        let columns = self.columns();
+        if self.selected % columns != 0 {
             self.selected -= 1;
         }
     }
 
     fn move_right(&mut self) {
-        if self.selected % 2 == 0 && self.selected + 1 < self.buttons().len() {
+        let columns = self.columns();
+        if self.selected % columns + 1 < columns && self.selected + 1 < self.buttons().len() {
             self.selected += 1;
         }
     }
 
     fn move_up(&mut self) {
-        if self.selected >= 2 {
-            self.selected -= 2;
+        let columns = self.columns();
+        if self.selected >= columns {
+            self.selected -= columns;
         }
     }
 
     fn move_down(&mut self) {
-        if self.selected + 2 < self.buttons().len() {
-            self.selected += 2;
+        let columns = self.columns();
+        if self.selected + columns < self.buttons().len() {
+            self.selected += columns;
         }
     }
 
@@ -490,9 +504,123 @@ fn run_automation(app: &mut App, config_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn base_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme_color(theme.colors.text))
+        .bg(theme_color(theme.colors.background))
+}
+
+fn muted_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme_color(theme.colors.muted))
+        .bg(theme_color(theme.colors.background))
+}
+
+fn selected_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme_color(theme.colors.selected_text))
+        .bg(theme_color(theme.colors.selected_background))
+}
+
+fn theme_color(color: ThemeColor) -> Color {
+    match color {
+        ThemeColor::Black => Color::Black,
+        ThemeColor::Red => Color::Red,
+        ThemeColor::Green => Color::Green,
+        ThemeColor::Yellow => Color::Yellow,
+        ThemeColor::Blue => Color::Blue,
+        ThemeColor::Magenta => Color::Magenta,
+        ThemeColor::Cyan => Color::Cyan,
+        ThemeColor::Gray => Color::Gray,
+        ThemeColor::DarkGray => Color::DarkGray,
+        ThemeColor::White => Color::White,
+    }
+}
+
+fn border_type(border: ThemeBorder) -> BorderType {
+    match border {
+        ThemeBorder::Plain => BorderType::Plain,
+        ThemeBorder::Rounded => BorderType::Rounded,
+        ThemeBorder::Double => BorderType::Double,
+        ThemeBorder::Thick => BorderType::Thick,
+    }
+}
+
+fn inset(area: Rect, amount: u16) -> Rect {
+    let horizontal = amount.min(area.width / 2);
+    let vertical = amount.min(area.height / 2);
+
+    Rect {
+        x: area.x.saturating_add(horizontal),
+        y: area.y.saturating_add(vertical),
+        width: area.width.saturating_sub(horizontal.saturating_mul(2)),
+        height: area.height.saturating_sub(vertical.saturating_mul(2)),
+    }
+}
+
+fn grid_areas(area: Rect, count: usize, columns: u16, gap: u16) -> Vec<Rect> {
+    if count == 0 {
+        return Vec::new();
+    }
+
+    let columns = columns.max(1);
+    let rows = count.div_ceil(usize::from(columns)) as u16;
+    let mut areas = Vec::with_capacity(count);
+
+    for index in 0..count {
+        let index = index as u16;
+        let row = index / columns;
+        let column = index % columns;
+        let (x, width) = segment(area.x, area.width, columns, gap, column);
+        let (y, height) = segment(area.y, area.height, rows, gap, row);
+        areas.push(Rect {
+            x,
+            y,
+            width,
+            height,
+        });
+    }
+
+    areas
+}
+
+fn segment(origin: u16, length: u16, parts: u16, gap: u16, index: u16) -> (u16, u16) {
+    let parts = parts.max(1);
+    let total_gap = gap.saturating_mul(parts.saturating_sub(1));
+    let usable = length.saturating_sub(total_gap);
+    let base = usable / parts;
+    let remainder = usable % parts;
+    let extra_before = index.min(remainder);
+    let extra_here = if index < remainder { 1 } else { 0 };
+    let offset = index
+        .saturating_mul(base)
+        .saturating_add(extra_before)
+        .saturating_add(index.saturating_mul(gap));
+
+    (
+        origin.saturating_add(offset),
+        base.saturating_add(extra_here),
+    )
+}
+
 fn contains(area: Rect, x: u16, y: u16) -> bool {
     x >= area.x
         && x < area.x.saturating_add(area.width)
         && y >= area.y
         && y < area.y.saturating_add(area.height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grid_respects_columns_and_gap() {
+        let areas = grid_areas(Rect::new(0, 0, 21, 11), 4, 2, 1);
+        assert_eq!(areas.len(), 4);
+        assert_eq!(areas[0], Rect::new(0, 0, 10, 5));
+        assert_eq!(areas[1], Rect::new(11, 0, 10, 5));
+        assert_eq!(areas[2], Rect::new(0, 6, 10, 5));
+        assert_eq!(areas[3], Rect::new(11, 6, 10, 5));
+    }
 }
