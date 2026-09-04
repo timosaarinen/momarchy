@@ -51,7 +51,7 @@ pub enum Action {
 pub struct InitialConfig {
     pub config: Config,
     pub path: PathBuf,
-    pub warning: Option<String>,
+    pub used_embedded_fallback: bool,
 }
 
 impl Config {
@@ -80,9 +80,14 @@ pub fn initialize() -> io::Result<InitialConfig> {
         Ok(config) => Ok(InitialConfig {
             config,
             path,
-            warning: None,
+            used_embedded_fallback: false,
         }),
         Err(error) => {
+            eprintln!(
+                "momarchy: could not load {}: {error}; using embedded config",
+                path.display()
+            );
+
             let config = load_source(DEFAULT_INIT_LUA, config_dir, "<embedded init.lua>").map_err(
                 |fallback| {
                     io::Error::other(format!(
@@ -94,9 +99,7 @@ pub fn initialize() -> io::Result<InitialConfig> {
             Ok(InitialConfig {
                 config,
                 path,
-                warning: Some(format!(
-                    "Lua-asetuksessa on virhe. Käytetään turvallista oletusta: {error}"
-                )),
+                used_embedded_fallback: true,
             })
         }
     }
