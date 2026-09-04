@@ -340,10 +340,10 @@ impl App {
                 live_message,
             } => {
                 if self.live_actions {
-                    Command::new("xdg-open").arg(&target).spawn()?;
+                    crate::browser::open(&target)?;
                     self.status = live_message;
                 } else {
-                    self.status = format!("KEHITYSTILA — browser: xdg-open {target}");
+                    self.status = format!("KEHITYSTILA — browser: {target}");
                 }
             }
             Action::Command {
