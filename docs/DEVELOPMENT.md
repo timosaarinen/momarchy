@@ -44,9 +44,11 @@ Useful first commands:
 cargo check
 cargo test
 cargo run -- status
-cargo run -- home
+cargo home
 cargo build --release
 ```
+
+`cargo home` stages the checked-out `lua/init.lua` into an isolated config under `target/` and launches the interactive Home against that copy. Local UI development therefore uses repo Lua directly without touching `~/.config/momarchy`.
 
 `Cargo.lock` is committed because Momarchy is an application.
 
@@ -62,11 +64,11 @@ The canonical default is `lua/init.lua` in this repository. It is compiled into 
 
 `$XDG_CONFIG_HOME/momarchy/init.lua` is used instead when `XDG_CONFIG_HOME` is set.
 
-The executable never overwrites an existing user `init.lua`. Once materialized, that file belongs to the machine administrator.
+Normal runtime never overwrites an existing user `init.lua`. An explicit `cargo deploy`, however, is an administrator action and treats the checked-out repo Lua as authoritative for the target.
 
 ### Semantic UI authoring
 
-The preferred authoring surface is the bundled `momarchy.ui` Lua module. It is preloaded by the executable, so there is no extra Lua file to install on the target:
+The preferred authoring surface is the bundled `momarchy.ui` Lua module. It is preloaded by the executable, so there is no extra Lua runtime dependency:
 
 ```lua
 local ui = require("momarchy.ui")
@@ -125,8 +127,10 @@ Actions are similarly small:
 
 - `ui.go "games"` navigates to another configured screen.
 - `ui.message "..."` changes the Home status message.
-- `ui.open(target, live_message)` launches the target with `xdg-open` when live actions are enabled.
+- `ui.open(target, live_message)` hands a URL to the host browser when live actions are enabled.
 - `ui.run({ "program", "arg1", ... }, kind, live_message)` launches a normal host process when live actions are enabled.
+
+On Omarchy/Linux, `ui.open` uses `omarchy-launch-browser`, so browser selection and detached launch behavior stay with Omarchy. Momarchy does not wait on the browser PID: browsers commonly reuse an existing process, so that PID is not a meaningful lifecycle signal. Home simply stays resident underneath; Hyprland owns window focus, and closing the browser naturally returns to the still-running Home. If the Omarchy helper is missing, Linux falls back to `xdg-open`. macOS live development uses the normal `open` command.
 
 Stable explicit button IDs are intentional. They are not visible to the user, but they are the automation contract used by commands such as `select games`.
 
@@ -204,14 +208,15 @@ cargo deploy t@momarchy
 The task:
 
 1. builds an x86-64 Linux `momarchy` release binary (native Cargo on Linux/WSL2, Zig cross-build on macOS);
-2. creates `~/.local/bin` on the target if needed;
-3. uploads to `~/.local/bin/momarchy.new` with `scp`;
-4. renames it to `~/.local/bin/momarchy` on the target;
-5. runs `momarchy status` as a cheap health check.
+2. creates the target Momarchy binary/config directories if needed;
+3. uploads the binary to `~/.local/bin/momarchy.new`;
+4. uploads repo `lua/init.lua` and `lua/momarchy/ui.lua` as staged target config files;
+5. atomically-ish renames the staged files into their normal target paths;
+6. runs `momarchy status` and a headless `momarchy home --automation` startup as cheap health checks.
 
-The editable Lua configuration is not part of normal binary deployment. An existing `~/.config/momarchy/init.lua` survives executable updates. A new machine receives the embedded default automatically the first time Home starts.
+An explicit deploy treats the repo as source of truth and intentionally replaces the target's Momarchy-managed Lua files. Normal runtime still never rewrites an existing config by itself.
 
-The rename is deliberately simple and same-filesystem. Replacing the executable does not kill an already running copy; service/TUI restart semantics will be added only when there is a real resident service that needs them.
+The binary rename is deliberately simple and same-filesystem. Replacing the executable does not kill an already running copy; service/TUI restart semantics will be added only when there is a real resident service that needs them.
 
 If you want `cargo deploy momarchy` without the `user@` prefix, configure the SSH destination normally in `~/.ssh/config`. Momarchy should not grow its own SSH configuration system.
 
@@ -236,7 +241,7 @@ The current runtime/tool assumptions are intentionally boring:
 - NetworkManager / `nmcli`
 - `lm_sensors` / `sensors`
 - OpenSSH
-- `xdg-open`
+- Omarchy's `omarchy-launch-browser` for browser handoff (`xdg-open` fallback)
 
 A browser and Tailscale are useful but not hard runtime dependencies of the first binary. Lua itself is not a target dependency because Lua 5.4 is vendored into `momarchy`.
 
@@ -256,7 +261,7 @@ Remote SSH access itself is an administrator choice. On Omarchy we currently use
 - No database until we have data that needs a database.
 - No custom remote-update protocol; SSH already exists.
 - No custom monitoring stack; use `/proc`, `/sys`, `systemctl`, `nmcli`, `sensors`, `journalctl`, etc.
-- Prefer normal Linux processes for launching browser/apps.
+- Prefer existing host launchers and normal processes for browser/apps; do not fake lifecycle from a browser PID when the browser/compositor already owns it.
 - User-facing Momarchy UI is Finnish. CLI, source, logs, config and docs are English.
 - Measure memory and latency on the 2 GB target before optimizing abstractions.
 
@@ -266,4 +271,4 @@ Remote SSH access itself is an administrator choice. On Omarchy we currently use
 
 `momarchy home` is the full-screen TUI. Rust owns terminal mechanics, layout/rendering, input, validated state and launching host actions. Lua owns the fast-changing semantic Home document and global theme.
 
-Expected next steps are to fill in the real actions, return to Home cleanly after launched applications, expose a small `doctor` view from existing Linux tools, and only then decide whether a resident daemon is actually useful.
+Expected next steps are to handle external GUI/terminal applications cleanly, verify live reload/recovery on the real target, expose a small `doctor` view from existing Linux tools, and only then decide whether a resident daemon is actually useful.
