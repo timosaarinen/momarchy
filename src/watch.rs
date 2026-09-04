@@ -1,5 +1,9 @@
-use std::{io, mem::MaybeUninit, path::Path};
+use std::{io, path::Path};
 
+#[cfg(target_os = "linux")]
+use std::mem::MaybeUninit;
+
+#[cfg(target_os = "linux")]
 use rustix::{
     fd::OwnedFd,
     fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags},
@@ -16,26 +20,36 @@ pub fn spawn<F>(config_dir: &Path, notify: F) -> io::Result<()>
 where
     F: Fn(WatchEvent) + Send + 'static,
 {
-    let fd = inotify::init(CreateFlags::CLOEXEC).map_err(io::Error::from)?;
-    inotify::add_watch(
-        &fd,
-        config_dir,
-        WatchFlags::CLOSE_WRITE | WatchFlags::MOVED_TO | WatchFlags::DELETE,
-    )
-    .map_err(io::Error::from)?;
+    #[cfg(target_os = "linux")]
+    {
+        let fd = inotify::init(CreateFlags::CLOEXEC).map_err(io::Error::from)?;
+        inotify::add_watch(
+            &fd,
+            config_dir,
+            WatchFlags::CLOSE_WRITE | WatchFlags::MOVED_TO | WatchFlags::DELETE,
+        )
+        .map_err(io::Error::from)?;
 
-    std::thread::Builder::new()
-        .name("momarchy-config-watch".to_owned())
-        .stack_size(128 * 1024)
-        .spawn(move || {
-            if let Err(error) = watch(fd, &notify) {
-                notify(WatchEvent::Failed(error.to_string()));
-            }
-        })?;
+        std::thread::Builder::new()
+            .name("momarchy-config-watch".to_owned())
+            .stack_size(128 * 1024)
+            .spawn(move || {
+                if let Err(error) = watch(fd, &notify) {
+                    notify(WatchEvent::Failed(error.to_string()));
+                }
+            })?;
 
-    Ok(())
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (config_dir, notify);
+        Ok(())
+    }
 }
 
+#[cfg(target_os = "linux")]
 fn watch<F>(fd: OwnedFd, notify: &F) -> io::Result<()>
 where
     F: Fn(WatchEvent),
@@ -65,6 +79,7 @@ where
     }
 }
 
+#[cfg(target_os = "linux")]
 fn is_relevant(event: &inotify::Event<'_>) -> bool {
     if event.events().contains(ReadFlags::QUEUE_OVERFLOW) {
         return true;
@@ -81,8 +96,6 @@ fn is_lua_name(name: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, sync::mpsc, time::Duration};
-
     use super::*;
 
     #[test]
@@ -92,8 +105,11 @@ mod tests {
         assert!(!is_lua_name(b"init.lua.tmp"));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn watcher_reports_lua_write_without_polling() {
+        use std::{fs, sync::mpsc, time::Duration};
+
         let dir = std::env::temp_dir().join(format!("momarchy-watch-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
