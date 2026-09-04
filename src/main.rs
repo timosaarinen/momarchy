@@ -3,7 +3,7 @@ mod home;
 mod status;
 mod watch;
 
-use std::process::ExitCode;
+use std::{path::PathBuf, process::ExitCode};
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -24,11 +24,17 @@ fn main() -> ExitCode {
         Some("home") => {
             let mut options = home::Options::default();
 
-            for arg in args {
+            while let Some(arg) = args.next() {
                 match arg.as_str() {
                     "--automation" => options.automation = true,
                     "--live-actions" => options.live_actions = true,
                     "--dry-run" => options.live_actions = false,
+                    "--config" => {
+                        let Some(path) = args.next() else {
+                            return fail("--config requires a path");
+                        };
+                        options.config_path = Some(PathBuf::from(path));
+                    }
                     "--help" | "-h" => {
                         print_home_help();
                         return ExitCode::SUCCESS;
@@ -66,7 +72,7 @@ fn print_home_help() {
     println!(
         "Momarchy Home\n\n\
 Usage:\n  momarchy home [options]\n\n\
-Options:\n  --dry-run        Do not launch host programs (default)\n  --live-actions   Allow host programs to launch\n  --automation     Use the stdin/stdout automation interface instead of a real terminal\n  -h, --help       Show this help"
+Options:\n  --config PATH    Load Home config directly from PATH\n  --dry-run        Do not launch host programs (default)\n  --live-actions   Allow host programs to launch\n  --automation     Use the stdin/stdout automation interface instead of a real terminal\n  -h, --help       Show this help"
     );
 }
 
