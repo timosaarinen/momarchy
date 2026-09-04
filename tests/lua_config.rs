@@ -1,8 +1,8 @@
 use std::{
     fs,
-    io::Write,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio},
 };
 
 const DEFAULT_INIT_LUA: &str = include_str!("../lua/init.lua");
@@ -77,7 +77,75 @@ fn broken_cold_start_config_falls_back_without_overwriting_it() {
     cleanup(&root);
 }
 
+#[test]
+fn reload_uses_a_fresh_lua_vm_and_reloads_required_modules() {
+    let root = test_config_home("fresh-vm");
+    let config_dir = root.join("momarchy");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    fs::write(
+        config_dir.join("init.lua"),
+        r#"local home = require("home")
+return {
+  version = 1,
+  home = "home",
+  screens = { home = home },
+}
+"#,
+    )
+    .unwrap();
+    write_home_module(&config_dir, "BEFORE");
+
+    let (mut child, mut stdin, mut stdout) = spawn_home_automation(&root);
+    let first = read_snapshot(&mut stdout);
+    assert!(first.contains("custom\tinternal\tBEFORE\tModule value"));
+
+    write_home_module(&config_dir, "AFTER");
+    stdin.write_all(b"reload\n").unwrap();
+    stdin.flush().unwrap();
+
+    let second = read_snapshot(&mut stdout);
+    assert!(second.contains("custom\tinternal\tAFTER\tModule value"));
+    assert!(second.contains("STATUS Asetukset päivitetty."));
+
+    stdin.write_all(b"quit\n").unwrap();
+    stdin.flush().unwrap();
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
+
+    cleanup(&root);
+}
+
+fn write_home_module(config_dir: &Path, label: &str) {
+    fs::write(
+        config_dir.join("home.lua"),
+        format!(
+            r#"return {{
+  title = "HOME",
+  subtitle = "Test",
+  buttons = {{
+    {{
+      id = "custom",
+      label = "{label}",
+      hint = "Module value",
+      action = {{ message = "Works" }},
+    }},
+  }},
+}}
+"#
+        ),
+    )
+    .unwrap();
+}
+
 fn run_home_automation(config_home: &Path, input: &str) -> Output {
+    let (mut child, mut stdin, _stdout) = spawn_home_automation(config_home);
+    stdin.write_all(input.as_bytes()).unwrap();
+    drop(stdin);
+    child.wait_with_output().unwrap()
+}
+
+fn spawn_home_automation(config_home: &Path) -> (Child, ChildStdin, BufReader<ChildStdout>) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_momarchy"))
         .args(["home", "--automation"])
         .env("XDG_CONFIG_HOME", config_home)
@@ -87,14 +155,22 @@ fn run_home_automation(config_home: &Path, input: &str) -> Output {
         .spawn()
         .unwrap();
 
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    let stdout = BufReader::new(child.stdout.take().unwrap());
+    (child, stdin, stdout)
+}
 
-    child.wait_with_output().unwrap()
+fn read_snapshot(stdout: &mut impl BufRead) -> String {
+    let mut snapshot = String::new();
+    loop {
+        let mut line = String::new();
+        assert_ne!(stdout.read_line(&mut line).unwrap(), 0, "unexpected EOF");
+        let end = line.trim_end() == "END";
+        snapshot.push_str(&line);
+        if end {
+            return snapshot;
+        }
+    }
 }
 
 fn assert_success(output: &Output) {
