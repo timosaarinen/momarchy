@@ -61,33 +61,40 @@ fn deploy(target: &str) -> Result<(), String> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let binary = build_release(&root, &cargo)?;
     let config = root.join("lua/init.lua");
+    let ui_module = root.join("lua/momarchy/ui.lua");
 
-    if !binary.is_file() {
-        return Err(format!("release binary not found: {}", binary.display()));
-    }
-    if !config.is_file() {
-        return Err(format!("Lua config not found: {}", config.display()));
+    for path in [&binary, &config, &ui_module] {
+        if !path.is_file() {
+            return Err(format!("deploy input not found: {}", path.display()));
+        }
     }
 
     println!("==> preparing {target}");
     run(Command::new("ssh").arg(target).arg(
-        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy\"",
+        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy/momarchy\"",
     ))?;
 
     println!("==> uploading {}", binary.display());
-    let remote_binary = format!("{target}:~/.local/bin/momarchy.new");
-    run(Command::new("scp").arg(&binary).arg(remote_binary))?;
+    run(Command::new("scp")
+        .arg(&binary)
+        .arg(format!("{target}:~/.local/bin/momarchy.new")))?;
 
     println!("==> uploading {}", config.display());
-    let remote_config = format!("{target}:~/.config/momarchy/init.lua.new");
-    run(Command::new("scp").arg(&config).arg(remote_config))?;
+    run(Command::new("scp")
+        .arg(&config)
+        .arg(format!("{target}:~/.config/momarchy/init.lua.new")))?;
 
-    println!("==> activating release and repo config");
+    println!("==> uploading {}", ui_module.display());
+    run(Command::new("scp")
+        .arg(&ui_module)
+        .arg(format!("{target}:~/.config/momarchy/momarchy/ui.lua.new")))?;
+
+    println!("==> activating release and repo Lua");
     run(Command::new("ssh").arg(target).arg(
-        "set -eu; chmod 755 \"$HOME/.local/bin/momarchy.new\"; mv -f \"$HOME/.local/bin/momarchy.new\" \"$HOME/.local/bin/momarchy\"; mv -f \"$HOME/.config/momarchy/init.lua.new\" \"$HOME/.config/momarchy/init.lua\"; \"$HOME/.local/bin/momarchy\" status; printf 'quit\\n' | \"$HOME/.local/bin/momarchy\" home --automation >/dev/null",
+        "set -eu; chmod 755 \"$HOME/.local/bin/momarchy.new\"; mv -f \"$HOME/.config/momarchy/momarchy/ui.lua.new\" \"$HOME/.config/momarchy/momarchy/ui.lua\"; mv -f \"$HOME/.local/bin/momarchy.new\" \"$HOME/.local/bin/momarchy\"; mv -f \"$HOME/.config/momarchy/init.lua.new\" \"$HOME/.config/momarchy/init.lua\"; \"$HOME/.local/bin/momarchy\" status; printf 'quit\\n' | \"$HOME/.local/bin/momarchy\" home --automation >/dev/null",
     ))?;
 
-    println!("==> deployed binary and Lua config to {target}");
+    println!("==> deployed binary and repo Lua to {target}");
     Ok(())
 }
 
