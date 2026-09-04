@@ -60,7 +60,7 @@ After joining the machine to your tailnet, normal SSH works over its Tailscale a
 
 More hardware details and archaeology live in [docs/HARDWARE.md](docs/HARDWARE.md).
 
-## Idea / status
+## Status
 
 The current idea is to use [Omarchy](https://omarchy.org/) as the Linux base, then hide almost all of the computer-y parts behind **Momarchy Home**: a tiny full-screen UI with a few obvious things to do. User-facing text is Finnish; code, CLI, docs and configuration stay English.
 
@@ -95,12 +95,12 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 
 ### 2026-09-01 — Day 1
 
-- Had been thinking about installing Omarchy for my own use on an old gaming laptop; dug it out and it still booted from HDD, very slowly
+- Had been thinking about installing Omarchy for my own use on an old Lenovo IdeaPad Y500 gaming laptop; dug it out
+- Y500 still booted from HDD, although slowly - made suspicious noises, smelled a bit burny on the first start, but booted old Windows after some traditional percussive maintenance
 - Got the sidequest idea: what if I give a pre-installed super-simple Omarchy laptop as a gift to my mom? She probably complains about not wanting any new machines at her age, so need to keep this very simple for her
 - First candidate was an ancient HP; no charger handy, no-go
-- Next candidate: Lenovo IdeaPad Y500, my old dual-GPU gaming laptop
-- Y500 HDD made suspicious noises, smelled a bit hot/burny on first start, then booted old Windows after some traditional percussive maintenance
-- Started rescuing old Windows archaeology before touching the disk
+- Next candidate: Y500 itself
+- Started rescuing some old Windows files before touching the disk
 - Made a Ventoy USB for Mint / Omarchy / rescue stuff instead of reflashing one ISO at a time
 - Created this public `momarchy` repo. Public/reproducible is useful anyway; secrets stay on the actual machine.
 
