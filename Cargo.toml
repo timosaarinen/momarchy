@@ -8,7 +8,9 @@ publish = false
 
 [dependencies]
 crossterm = "0.29.0"
+mlua = { version = "0.12.1", features = ["lua54", "vendored"] }
 ratatui = "0.30.2"
+rustix = { version = "1.1.4", features = ["fs"] }
 
 [profile.release]
 codegen-units = 1

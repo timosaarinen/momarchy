@@ -1,17 +1,27 @@
 use std::{
     io::{self, BufRead, Write, stdout},
+    path::Path,
     process::Command,
+    sync::mpsc::{self, Sender},
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+        MouseEventKind,
+    },
     execute,
 };
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
-    DefaultTerminal, Frame,
+};
+
+use crate::{
+    config::{self, Action, Button, Config},
+    watch::{self, WatchEvent},
 };
 
 #[derive(Clone, Copy, Default)]
@@ -20,129 +30,20 @@ pub struct Options {
     pub live_actions: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Screen {
-    Home,
-    Games,
-    Help,
-}
-
-#[derive(Clone, Copy)]
-enum Action {
-    Navigate(Screen),
-    Message(&'static str),
-    Host {
-        kind: &'static str,
-        program: &'static str,
-        args: &'static [&'static str],
-        live_message: &'static str,
-    },
-}
-
-#[derive(Clone, Copy)]
-struct Button {
-    id: &'static str,
-    label: &'static str,
-    hint: &'static str,
-    action: Action,
-}
-
-const HOME_BUTTONS: [Button; 8] = [
-    Button {
-        id: "internet",
-        label: "INTERNET",
-        hint: "Avaa selain",
-        action: Action::Host {
-            kind: "browser",
-            program: "xdg-open",
-            args: &["https://www.google.fi/"],
-            live_message: "Avataan internet.",
-        },
-    },
-    Button {
-        id: "email",
-        label: "SÄHKÖPOSTI",
-        hint: "Lue ja lähetä viestejä",
-        action: Action::Message("Sähköposti otetaan käyttöön seuraavaksi."),
-    },
-    Button {
-        id: "photos",
-        label: "KUVAT",
-        hint: "Katso kuvia",
-        action: Action::Message("Kuvat otetaan käyttöön seuraavaksi."),
-    },
-    Button {
-        id: "youtube",
-        label: "YOUTUBE",
-        hint: "Katso videoita",
-        action: Action::Host {
-            kind: "browser",
-            program: "xdg-open",
-            args: &["https://www.youtube.com/"],
-            live_message: "Avataan YouTube.",
-        },
-    },
-    Button {
-        id: "ask",
-        label: "KYSY MITÄ VAIN",
-        hint: "Kirjoita tai puhu kysymys",
-        action: Action::Message("Kysy mitä vain tulee seuraavaksi."),
-    },
-    Button {
-        id: "tv",
-        label: "KATSO TELEVISIOSTA",
-        hint: "Chromecast",
-        action: Action::Message("Chromecast-tuki tulee seuraavaksi."),
-    },
-    Button {
-        id: "games",
-        label: "PELIT",
-        hint: "Palikat, Mato...",
-        action: Action::Navigate(Screen::Games),
-    },
-    Button {
-        id: "help",
-        label: "APUA",
-        hint: "Jos jokin ei toimi",
-        action: Action::Navigate(Screen::Help),
-    },
-];
-
-const GAME_BUTTONS: [Button; 3] = [
-    Button {
-        id: "palikat",
-        label: "PALIKAT",
-        hint: "Putoavia palikoita",
-        action: Action::Message("Palikat tulee pian :)"),
-    },
-    Button {
-        id: "mato",
-        label: "MATO",
-        hint: "Syö ja kasva",
-        action: Action::Message("Mato tulee pian :)"),
-    },
-    Button {
-        id: "back",
-        label: "TAKAISIN",
-        hint: "Palaa alkuun",
-        action: Action::Navigate(Screen::Home),
-    },
-];
-
-const HELP_BUTTONS: [Button; 1] = [Button {
-    id: "back",
-    label: "TAKAISIN",
-    hint: "Palaa alkuun",
-    action: Action::Navigate(Screen::Home),
-}];
-
 pub fn run(options: Options) -> io::Result<()> {
+    let initial = config::initialize()?;
+    let mut app = App::new(
+        initial.config,
+        options.live_actions,
+        initial.used_embedded_fallback,
+    );
+
     if options.automation {
-        return run_automation(options);
+        return run_automation(&mut app, &initial.path);
     }
 
     let _mouse = MouseCaptureGuard::enable()?;
-    ratatui::run(|terminal| App::new(options.live_actions).run(terminal))
+    ratatui::run(|terminal| app.run(terminal, &initial.path))
 }
 
 struct MouseCaptureGuard;
@@ -160,8 +61,16 @@ impl Drop for MouseCaptureGuard {
     }
 }
 
+enum RuntimeEvent {
+    Terminal(Event),
+    TerminalFailed(String),
+    ConfigChanged,
+    WatchFailed,
+}
+
 struct App {
-    screen: Screen,
+    config: Config,
+    screen: String,
     selected: usize,
     button_areas: Vec<Rect>,
     status: String,
@@ -170,22 +79,60 @@ struct App {
 }
 
 impl App {
-    fn new(live_actions: bool) -> Self {
+    fn new(config: Config, live_actions: bool, used_embedded_fallback: bool) -> Self {
+        let screen = config.home.clone();
+        let status = if used_embedded_fallback {
+            "Asetuksissa on virhe. Käytetään turvallisia oletusasetuksia.".to_owned()
+        } else {
+            "Valitse hiirellä tai nuolinäppäimillä.".to_owned()
+        };
+
         Self {
-            screen: Screen::Home,
+            config,
+            screen,
             selected: 0,
             button_areas: Vec::new(),
-            status: "Valitse hiirellä tai nuolinäppäimillä.".to_owned(),
+            status,
             exit: false,
             live_actions,
         }
     }
 
-    fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+    fn run(&mut self, terminal: &mut DefaultTerminal, config_path: &Path) -> io::Result<()> {
+        let (sender, receiver) = mpsc::channel();
+        spawn_terminal_reader(sender.clone())?;
+
+        let config_dir = config_path
+            .parent()
+            .ok_or_else(|| io::Error::other("Momarchy config path has no parent directory"))?;
+        let watch_sender = sender.clone();
+        watch::spawn(config_dir, move |event| {
+            let event = match event {
+                WatchEvent::ConfigChanged => RuntimeEvent::ConfigChanged,
+                WatchEvent::Failed(error) => {
+                    eprintln!("momarchy: config watcher failed: {error}");
+                    RuntimeEvent::WatchFailed
+                }
+            };
+            let _ = watch_sender.send(event);
+        })?;
+
         while !self.exit {
             terminal.draw(|frame| self.render(frame))?;
-            self.handle_event(event::read()?)?;
+
+            match receiver.recv() {
+                Ok(RuntimeEvent::Terminal(event)) => self.handle_event(event)?,
+                Ok(RuntimeEvent::TerminalFailed(error)) => {
+                    return Err(io::Error::other(format!("terminal input failed: {error}")));
+                }
+                Ok(RuntimeEvent::ConfigChanged) => self.reload_config(config_path),
+                Ok(RuntimeEvent::WatchFailed) => {
+                    self.status = "Asetusten automaattinen päivitys ei toimi.".to_owned();
+                }
+                Err(_) => return Err(io::Error::other("Momarchy event sources stopped")),
+            }
         }
+
         Ok(())
     }
 
@@ -199,10 +146,13 @@ impl App {
             ])
             .split(frame.area());
 
-        let (title, subtitle) = match self.screen {
-            Screen::Home => ("MOMARCHY", "Mitä haluat tehdä?"),
-            Screen::Games => ("PELIT", "Valitse peli"),
-            Screen::Help => ("APUA", "Jos jokin ei toimi"),
+        let (title, subtitle, body) = {
+            let screen = self.current_screen();
+            (
+                screen.title.clone(),
+                screen.subtitle.clone(),
+                screen.body.clone(),
+            )
         };
 
         let header = Paragraph::new(format!("{title}\n{subtitle}"))
@@ -210,19 +160,17 @@ impl App {
             .style(Style::default().add_modifier(Modifier::BOLD));
         frame.render_widget(header, areas[0]);
 
-        if self.screen == Screen::Help {
-            let help_areas = Layout::default()
+        if let Some(body) = body {
+            let content_areas = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(6), Constraint::Length(6)])
                 .split(areas[1]);
 
-            let help = Paragraph::new(
-                "Momarchy tarkistaa myöhemmin tästä internet-yhteyden ja muut tärkeät asiat.\n\nJos jokin ei toimi, pyydä apua.",
-            )
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: true });
-            frame.render_widget(help, help_areas[0]);
-            self.render_buttons(frame, help_areas[1]);
+            let body = Paragraph::new(body)
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true });
+            frame.render_widget(body, content_areas[0]);
+            self.render_buttons(frame, content_areas[1]);
         } else {
             self.render_buttons(frame, areas[1]);
         }
@@ -239,9 +187,16 @@ impl App {
     }
 
     fn render_buttons(&mut self, frame: &mut Frame, area: Rect) {
-        let buttons = self.buttons();
-        self.button_areas.clear();
-        self.button_areas.resize(buttons.len(), Rect::default());
+        let selected = self.selected;
+        let buttons = &self
+            .config
+            .screen(&self.screen)
+            .expect("current screen must exist in validated config")
+            .buttons;
+        let button_areas = &mut self.button_areas;
+
+        button_areas.clear();
+        button_areas.resize(buttons.len(), Rect::default());
 
         let rows_count = buttons.len().div_ceil(2);
         let row_constraints = vec![Constraint::Ratio(1, rows_count as u32); rows_count];
@@ -262,10 +217,10 @@ impl App {
                     continue;
                 }
 
-                self.button_areas[index] = *button_area;
-                let button = buttons[index];
-                let selected = index == self.selected;
-                let style = if selected {
+                button_areas[index] = *button_area;
+                let button = &buttons[index];
+                let is_selected = index == selected;
+                let style = if is_selected {
                     Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
                 } else {
                     Style::default()
@@ -283,12 +238,14 @@ impl App {
         }
     }
 
-    fn buttons(&self) -> &'static [Button] {
-        match self.screen {
-            Screen::Home => &HOME_BUTTONS,
-            Screen::Games => &GAME_BUTTONS,
-            Screen::Help => &HELP_BUTTONS,
-        }
+    fn current_screen(&self) -> &config::Screen {
+        self.config
+            .screen(&self.screen)
+            .expect("current screen must exist in validated config")
+    }
+
+    fn buttons(&self) -> &[Button] {
+        &self.current_screen().buttons
     }
 
     fn handle_event(&mut self, event: Event) -> io::Result<()> {
@@ -345,43 +302,47 @@ impl App {
     }
 
     fn back_or_exit(&mut self) {
-        if self.screen == Screen::Home {
+        if self.screen == self.config.home {
             self.exit = true;
         } else {
-            self.go_to(Screen::Home);
+            let home = self.config.home.clone();
+            self.go_to(home);
         }
     }
 
-    fn go_to(&mut self, screen: Screen) {
+    fn go_to(&mut self, screen: String) {
         self.screen = screen;
         self.selected = 0;
-        self.status = match screen {
-            Screen::Home => "Mitä haluat tehdä?".to_owned(),
-            Screen::Games => "Valitse peli.".to_owned(),
-            Screen::Help => "Apua ja tarkistukset tulevat tähän.".to_owned(),
-        };
+        self.status = self.current_screen().subtitle.clone();
     }
 
     fn activate(&mut self) -> io::Result<()> {
-        let button = self.buttons()[self.selected];
-        match button.action {
+        let action = self.buttons()[self.selected].action.clone();
+        match action {
             Action::Navigate(screen) => self.go_to(screen),
-            Action::Message(message) => self.status = message.to_owned(),
-            Action::Host {
+            Action::Message(message) => self.status = message,
+            Action::Open {
+                target,
+                live_message,
+            } => {
+                if self.live_actions {
+                    Command::new("xdg-open").arg(&target).spawn()?;
+                    self.status = live_message;
+                } else {
+                    self.status = format!("KEHITYSTILA — browser: xdg-open {target}");
+                }
+            }
+            Action::Command {
                 kind,
                 program,
                 args,
                 live_message,
             } => {
                 if self.live_actions {
-                    Command::new(program).args(args).spawn()?;
-                    self.status = live_message.to_owned();
+                    Command::new(&program).args(&args).spawn()?;
+                    self.status = live_message;
                 } else {
-                    self.status = format!(
-                        "KEHITYSTILA — {kind}: {} {}",
-                        program,
-                        args.join(" ")
-                    );
+                    self.status = format!("KEHITYSTILA — {kind}: {program} {}", args.join(" "));
                 }
             }
         }
@@ -410,9 +371,45 @@ impl App {
         Ok(())
     }
 
+    fn reload_config(&mut self, config_path: &Path) {
+        let selected_id = self
+            .buttons()
+            .get(self.selected)
+            .map(|button| button.id.clone());
+        let previous_screen = self.screen.clone();
+
+        match config::load(config_path) {
+            Ok(config) => {
+                let screen = if config.screen(&previous_screen).is_some() {
+                    previous_screen
+                } else {
+                    config.home.clone()
+                };
+
+                self.config = config;
+                self.screen = screen;
+                self.selected = selected_id
+                    .and_then(|id| self.buttons().iter().position(|button| button.id == id))
+                    .unwrap_or(0);
+                self.status = "Asetukset päivitetty.".to_owned();
+            }
+            Err(error) => {
+                eprintln!(
+                    "momarchy: could not reload {}: {error}; keeping previous config",
+                    config_path.display()
+                );
+                self.status = "Asetusvirhe — vanhat asetukset säilytettiin.".to_owned();
+            }
+        }
+    }
+
     fn write_snapshot(&self, out: &mut impl Write) -> io::Result<()> {
-        writeln!(out, "SCREEN {}", screen_id(self.screen))?;
-        writeln!(out, "MODE {}", if self.live_actions { "live" } else { "dry-run" })?;
+        writeln!(out, "SCREEN {}", self.screen)?;
+        writeln!(
+            out,
+            "MODE {}",
+            if self.live_actions { "live" } else { "dry-run" }
+        )?;
         writeln!(out, "SELECTED {}", self.buttons()[self.selected].id)?;
         writeln!(out, "ACTIONS")?;
         for button in self.buttons() {
@@ -420,7 +417,7 @@ impl App {
                 out,
                 "{}\t{}\t{}\t{}",
                 button.id,
-                action_kind(button.action),
+                button.action.kind(),
                 button.label,
                 button.hint
             )?;
@@ -431,10 +428,31 @@ impl App {
     }
 }
 
-fn run_automation(options: Options) -> io::Result<()> {
+fn spawn_terminal_reader(sender: Sender<RuntimeEvent>) -> io::Result<()> {
+    std::thread::Builder::new()
+        .name("momarchy-terminal-input".to_owned())
+        .stack_size(256 * 1024)
+        .spawn(move || {
+            loop {
+                match event::read() {
+                    Ok(event) => {
+                        if sender.send(RuntimeEvent::Terminal(event)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = sender.send(RuntimeEvent::TerminalFailed(error.to_string()));
+                        break;
+                    }
+                }
+            }
+        })?;
+    Ok(())
+}
+
+fn run_automation(app: &mut App, config_path: &Path) -> io::Result<()> {
     let stdin = io::stdin();
     let mut out = io::stdout().lock();
-    let mut app = App::new(options.live_actions);
     app.write_snapshot(&mut out)?;
 
     for line in stdin.lock().lines() {
@@ -448,6 +466,8 @@ fn run_automation(options: Options) -> io::Result<()> {
             break;
         } else if command == "activate" {
             app.activate()?;
+        } else if command == "reload" {
+            app.reload_config(config_path);
         } else if command == "snapshot" || command == "render" {
             // The semantic snapshot is the first automation surface. A full Ratatui
             // frame dump can be added later without changing the command stream.
@@ -468,22 +488,6 @@ fn run_automation(options: Options) -> io::Result<()> {
     }
 
     Ok(())
-}
-
-fn screen_id(screen: Screen) -> &'static str {
-    match screen {
-        Screen::Home => "home",
-        Screen::Games => "games",
-        Screen::Help => "help",
-    }
-}
-
-fn action_kind(action: Action) -> &'static str {
-    match action {
-        Action::Navigate(_) => "internal",
-        Action::Message(_) => "internal",
-        Action::Host { kind, .. } => kind,
-    }
 }
 
 fn contains(area: Rect, x: u16, y: u16) -> bool {
