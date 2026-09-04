@@ -76,10 +76,10 @@ Requires a current stable Rust toolchain. Ratatui 0.30 currently requires Rust 1
 git clone https://github.com/timosaarinen/momarchy.git
 cd momarchy
 cargo run -- status
-cargo run -- home
+cargo home
 ```
 
-`home` now has the first real Finnish Momarchy Home screen with mouse/keyboard navigation, `Pelit` and `Apua` subviews, semantic Lua-authored screens, a global theme, and safe dry-run host actions. Development runs do not launch external programs unless explicitly started with `--live-actions`.
+`cargo home` is the normal development UI loop: it stages the current repo `lua/init.lua` under `target/` and launches Momarchy Home against that isolated config, so development always uses the checked-out Lua without touching `~/.config/momarchy`. Host actions stay dry-run unless explicitly enabled.
 
 Remote deployment is project-local Cargo automation:
 
@@ -87,7 +87,7 @@ Remote deployment is project-local Cargo automation:
 cargo deploy t@momarchy
 ```
 
-That builds a release binary, copies it over SSH to `~/.local/bin/momarchy`, atomically replaces the previous binary and runs `momarchy status` remotely. No Git checkout or Rust compiler is needed on the target.
+An explicit deploy treats the repo as source of truth: it builds the Linux release, uploads the binary plus `lua/init.lua` and the tiny Lua UI helper, replaces the target Momarchy files, then runs both `momarchy status` and a headless Home automation startup as cheap health checks. No Git checkout or Rust compiler is needed on the target.
 
 ### Configure Home in Lua
 
@@ -208,15 +208,15 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Replaced verbose hand-authored screen tables with a bundled semantic Lua vocabulary: `ui.title`, `ui.subtitle`, `ui.text`, `ui.button` and tiny action helpers. The helper expands to the existing normalized v1 config instead of introducing a DOM or second runtime model
 - Added a single global Lua theme for layout, colors and borders. Ratatui now follows theme columns/gap/margin and configured colors/border style; keyboard navigation follows the chosen column count. No per-button styling, selectors, classes or CSS cascade
 - Kept backwards compatibility: existing normalized version-1 Lua configs still load, while new configs can `require("momarchy.ui")` from the binary with no extra runtime file to install
+- Made the repo Lua files the explicit development/deployment source of truth: `cargo home` stages the checked-out `lua/init.lua` into an isolated dev config, while `cargo deploy` replaces the target binary and repo-managed Lua files and validates Home through the automation interface
 
 ## TODO
 
-- [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, text size, focus, wording and real actions on the 13-inch target.
-- [ ] Add KISS remote screenshots for real-device development: capture the MBP13 Wayland output with an existing tool such as `grim`, stream/copy the PNG back over SSH, and optionally wrap it as `cargo screenshot <ssh-target>` that opens/saves the image on the development machine. No screenshot server or custom protocol.
 - [ ] Launch Chrome/URLs from Home and return cleanly to Home when the task is done.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
 - [ ] Verify live inotify config reload, bad-edit recovery and normal boot -> Home behavior on the actual MBP13.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
+- [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, focus, wording and real actions, then do final sizing/geometry checks on the 13-inch target.
 - [ ] Automation should support all useful stable semantic commands plus human-equivalent input, including optional `click x y` for hitbox testing.
 - [ ] Add an optional automation `render` command that dumps the whole virtual Ratatui frame from an in-memory backend when semantic state/actions are not enough.
 - [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no technical backend jargon in mom UI.
@@ -224,7 +224,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] `Katso televisiosta`: make the found Chromecast useful from Momarchy; test YouTube, Yle Areena and other useful Finnish streams.
 - [ ] `Pelit`: evaluate existing open-source terminal games first; integrate/fork only mom-worthy ones. Palikat + Mato are the first targets.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
-- [ ] Define an explicit config update/reset/migration path before Momarchy's default Lua or config schema starts changing; existing admin config must remain authoritative and must never be silently replaced by a binary update.
+- [ ] Add a calm colored ASCII-art background through the global theme, likely a Finnish lake/forest scene framing the usable center; keep artwork separate from screen structure and avoid per-screen styling.
+- [ ] Add KISS remote screenshots if local `cargo home` stops being enough for target-parity checks: capture MBP13 Wayland with an existing tool such as `grim`, stream/copy the PNG over SSH, and optionally wrap it as `cargo screenshot <ssh-target>`. No screenshot server or custom protocol.
 - [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
 - [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz before changing drivers.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
