@@ -1,4 +1,5 @@
 [alias]
+home = "run --package xtask -- home"
 deploy = "run --package xtask -- deploy"
 
 # Deployment targets can be genuinely old x86-64 machines. Keep release builds
