@@ -122,24 +122,40 @@ fn ensure_user_config() -> io::Result<PathBuf> {
         .ok_or_else(|| io::Error::other("Momarchy config path has no parent directory"))?;
     fs::create_dir_all(parent)?;
 
-    if path.exists() {
-        return Ok(path);
-    }
-
-    match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-    {
-        Ok(mut file) => {
-            file.write_all(DEFAULT_INIT_LUA.as_bytes())?;
-            file.sync_all()?;
-        }
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+    match fs::symlink_metadata(&path) {
+        Ok(_) => return Ok(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
 
+    materialize_default(&path, parent)?;
     Ok(path)
+}
+
+fn materialize_default(path: &Path, parent: &Path) -> io::Result<()> {
+    let temp = parent.join(format!(".init.lua.{}.tmp", std::process::id()));
+    let _ = fs::remove_file(&temp);
+
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(DEFAULT_INIT_LUA.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+
+        // hard_link is an atomic no-replace publication step: another Momarchy
+        // process or administrator-created init.lua wins rather than being overwritten.
+        match fs::hard_link(&temp, path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error),
+        }
+    })();
+
+    let _ = fs::remove_file(&temp);
+    result
 }
 
 fn user_config_path() -> io::Result<PathBuf> {
