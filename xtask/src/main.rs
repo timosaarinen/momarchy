@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::{Command, ExitCode, Stdio},
 };
@@ -10,51 +10,84 @@ const ZIG_LINUX_TARGET: &str = "x86_64-unknown-linux-gnu.2.17";
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
 
-    match args.next().as_deref() {
+    let result = match args.next().as_deref() {
         Some("deploy") => match args.next() {
-            Some(target) => match deploy(&target) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(error) => {
-                    eprintln!("deploy failed: {error}");
-                    ExitCode::FAILURE
-                }
-            },
-            None => {
-                eprintln!("usage: cargo deploy <ssh-target>\nexample: cargo deploy t@momarchy");
-                ExitCode::FAILURE
-            }
+            Some(target) => deploy(&target),
+            None => Err("usage: cargo deploy <ssh-target>\nexample: cargo deploy t@momarchy".into()),
         },
-        _ => {
-            eprintln!("xtask commands:\n  deploy <ssh-target>");
+        Some("home") => dev_home(args.collect()),
+        _ => Err("xtask commands:\n  home [momarchy-home-options]\n  deploy <ssh-target>".into()),
+    };
+
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("xtask failed: {error}");
             ExitCode::FAILURE
         }
     }
+}
+
+fn dev_home(home_args: Vec<String>) -> Result<(), String> {
+    let root = workspace_root()?;
+    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let source_config = root.join("lua/init.lua");
+    let xdg_config_home = root.join("target/momarchy-dev-config");
+    let config_dir = xdg_config_home.join("momarchy");
+    let staged_config = config_dir.join("init.lua");
+
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("could not create {}: {error}", config_dir.display()))?;
+    fs::copy(&source_config, &staged_config).map_err(|error| {
+        format!(
+            "could not stage {} as {}: {error}",
+            source_config.display(),
+            staged_config.display()
+        )
+    })?;
+
+    let mut command = Command::new(cargo);
+    command
+        .current_dir(&root)
+        .env("XDG_CONFIG_HOME", &xdg_config_home)
+        .args(["run", "--package", "momarchy", "--", "home"])
+        .args(home_args);
+
+    run(&mut command)
 }
 
 fn deploy(target: &str) -> Result<(), String> {
     let root = workspace_root()?;
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let binary = build_release(&root, &cargo)?;
+    let config = root.join("lua/init.lua");
 
     if !binary.is_file() {
         return Err(format!("release binary not found: {}", binary.display()));
     }
+    if !config.is_file() {
+        return Err(format!("Lua config not found: {}", config.display()));
+    }
 
     println!("==> preparing {target}");
-    run(Command::new("ssh")
-        .arg(target)
-        .arg("mkdir -p \"$HOME/.local/bin\""))?;
-
-    println!("==> uploading {}", binary.display());
-    let remote_staging = format!("{target}:~/.local/bin/momarchy.new");
-    run(Command::new("scp").arg(&binary).arg(remote_staging))?;
-
-    println!("==> activating release");
     run(Command::new("ssh").arg(target).arg(
-        "set -eu; chmod 755 \"$HOME/.local/bin/momarchy.new\"; mv -f \"$HOME/.local/bin/momarchy.new\" \"$HOME/.local/bin/momarchy\"; \"$HOME/.local/bin/momarchy\" status",
+        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy\"",
     ))?;
 
-    println!("==> deployed to {target}");
+    println!("==> uploading {}", binary.display());
+    let remote_binary = format!("{target}:~/.local/bin/momarchy.new");
+    run(Command::new("scp").arg(&binary).arg(remote_binary))?;
+
+    println!("==> uploading {}", config.display());
+    let remote_config = format!("{target}:~/.config/momarchy/init.lua.new");
+    run(Command::new("scp").arg(&config).arg(remote_config))?;
+
+    println!("==> activating release and repo config");
+    run(Command::new("ssh").arg(target).arg(
+        "set -eu; chmod 755 \"$HOME/.local/bin/momarchy.new\"; mv -f \"$HOME/.local/bin/momarchy.new\" \"$HOME/.local/bin/momarchy\"; mv -f \"$HOME/.config/momarchy/init.lua.new\" \"$HOME/.config/momarchy/init.lua\"; \"$HOME/.local/bin/momarchy\" status; printf 'quit\\n' | \"$HOME/.local/bin/momarchy\" home --automation >/dev/null",
+    ))?;
+
+    println!("==> deployed binary and Lua config to {target}");
     Ok(())
 }
 
