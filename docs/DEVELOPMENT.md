@@ -5,7 +5,7 @@ Momarchy is intentionally small. The deployment target is an appliance, not a de
 ## Current shape
 
 ```text
-newer Linux / WSL2 development machine
+newer Linux / WSL2 / macOS development machine
     cargo build / test / deploy
                 |
                 | SSH (LAN or Tailscale)
@@ -21,11 +21,22 @@ The first deployment target is a 2009 x86-64 MacBook Pro. Release builds therefo
 
 ## Development requirements
 
-- Linux development environment; WSL2 is fine.
+- Linux/WSL2 or macOS development environment.
 - Current stable Rust. Momarchy currently has a Rust 1.88 floor.
 - `ssh` and `scp` for deployment.
+- On macOS only, Linux cross-build support through Zig + cargo-zigbuild.
 
-Cargo owns Rust dependencies. There is no separate development dependency installer.
+Cargo owns Rust dependencies. There is no separate development dependency installer for the Momarchy target.
+
+On macOS, install the cross-build tools once:
+
+```bash
+brew install zig
+cargo install --locked cargo-zigbuild
+rustup target add x86_64-unknown-linux-gnu
+```
+
+Linux/WSL2 builds use ordinary Cargo. macOS deploy builds use `cargo zigbuild` to produce the same x86-64 Linux executable without requiring Docker, a VM, a remote build host, or a compiler on the Momarchy laptop. The Zig build targets glibc 2.17 as a conservative minimum and still uses Momarchy's generic `x86-64` CPU baseline.
 
 Useful first commands:
 
@@ -128,7 +139,7 @@ cargo deploy t@momarchy
 
 The task:
 
-1. builds `momarchy` in release mode;
+1. builds an x86-64 Linux `momarchy` release binary (native Cargo on Linux/WSL2, Zig cross-build on macOS);
 2. creates `~/.local/bin` on the target if needed;
 3. uploads to `~/.local/bin/momarchy.new` with `scp`;
 4. renames it to `~/.local/bin/momarchy` on the target;
