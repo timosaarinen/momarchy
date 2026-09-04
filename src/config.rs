@@ -336,6 +336,12 @@ fn validate(config: &Config, source_name: &str) -> Result<(), String> {
                 screen.id
             ));
         }
+        if screen.buttons.is_empty() {
+            return Err(format!(
+                "{source_name}: screen {:?} must contain at least one button",
+                screen.id
+            ));
+        }
 
         let mut button_ids = HashSet::new();
         for button in &screen.buttons {
@@ -439,5 +445,25 @@ mod tests {
 
         let error = load_source(source, Path::new("."), "test").unwrap_err();
         assert!(error.contains("exactly one"));
+    }
+
+    #[test]
+    fn empty_screen_is_rejected() {
+        let source = r#"
+            return {
+              version = 1,
+              home = "home",
+              screens = {
+                home = {
+                  title = "Home",
+                  subtitle = "Test",
+                  buttons = {},
+                },
+              },
+            }
+        "#;
+
+        let error = load_source(source, Path::new("."), "test").unwrap_err();
+        assert!(error.contains("at least one button"));
     }
 }
