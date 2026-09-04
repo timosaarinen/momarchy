@@ -1,4 +1,6 @@
-# Momarchy
+<p align="center">
+  <img src="docs/images/momarchy-logo.png" alt="Momarchy" width="900">
+</p>
 
 A small side project: make an old laptop simple enough that my mom can just use it.
 
