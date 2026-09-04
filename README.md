@@ -66,7 +66,7 @@ The current idea is to use [Omarchy](https://omarchy.org/) as the Linux base, th
 
 The first real deployment target is a **13-inch MacBook Pro from 2009** with a Core 2 Duo, 2 GB RAM and GeForce 9400M. Omarchy 4.0.2 installed and booted on it just fine. That makes low memory, old CPUs and boring reliability real design constraints instead of hypothetical ones.
 
-Current implementation direction: **Rust + Ratatui TUI**, built on a newer computer and deployed as a small binary over SSH/Tailscale. The source repo and Rust toolchain do not need to exist on the Momarchy laptop.
+Current implementation direction: **Rust + Ratatui TUI** as the small stable appliance engine, with Home structure/content and one global theme authored in Lua. Builds happen on a newer computer and deploy as one small binary over SSH/Tailscale; the source repo and Rust toolchain do not need to exist on the Momarchy laptop.
 
 ## Try the current scaffold
 
@@ -79,7 +79,7 @@ cargo run -- status
 cargo run -- home
 ```
 
-`home` now has the first real Finnish Momarchy Home screen with mouse/keyboard navigation, `Pelit` and `Apua` subviews, and safe dry-run host actions. Development runs do not launch external programs unless explicitly started with `--live-actions`.
+`home` now has the first real Finnish Momarchy Home screen with mouse/keyboard navigation, `Pelit` and `Apua` subviews, semantic Lua-authored screens, a global theme, and safe dry-run host actions. Development runs do not launch external programs unless explicitly started with `--live-actions`.
 
 Remote deployment is project-local Cargo automation:
 
@@ -88,6 +88,46 @@ cargo deploy t@momarchy
 ```
 
 That builds a release binary, copies it over SSH to `~/.local/bin/momarchy`, atomically replaces the previous binary and runs `momarchy status` remotely. No Git checkout or Rust compiler is needed on the target.
+
+### Configure Home in Lua
+
+The preferred config is intentionally closer to tiny semantic HTML than a UI framework. Screens contain a few semantic elements; styling lives once in the global theme instead of on every button:
+
+```lua
+local ui = require("momarchy.ui")
+
+return ui.app {
+  home = "home",
+
+  theme = {
+    layout = { columns = 2, gap = 1, margin = 1 },
+    colors = {
+      background = "black",
+      text = "white",
+      muted = "gray",
+      selected_background = "white",
+      selected_text = "black",
+    },
+    border = "rounded",
+  },
+
+  screens = {
+    home = ui.screen {
+      ui.title "MOMARCHY",
+      ui.subtitle "Mitä haluat tehdä?",
+      ui.button(
+        "internet",
+        "INTERNET",
+        "Avaa selain",
+        ui.open("https://www.google.fi/", "Avataan internet.")
+      ),
+      ui.button("games", "PELIT", "Palikat, Mato...", ui.go "games"),
+    },
+  },
+}
+```
+
+The vocabulary is deliberately tiny: `ui.title`, `ui.subtitle`, `ui.text`, `ui.button`, plus `ui.go`, `ui.message`, `ui.open` and `ui.run` actions. There are no per-element style tables, selectors, classes or CSS-like cascading. Stable explicit button IDs stay because the SSH automation interface uses them (`select games`, `activate`, etc.). Existing verbose version-1 Lua configs remain supported; the DSL expands to the same validated Rust config underneath.
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/deployment rules and [docs/HARDWARE.md](docs/HARDWARE.md) for hardware archaeology.
 
@@ -164,6 +204,10 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added macOS -> Linux release cross-builds with Zig + `cargo-zigbuild`, targeting `x86_64-unknown-linux-gnu.2.17` while retaining the generic x86-64 CPU baseline needed by the Core 2 Duo
 - Shook out the small portability bugs during the real run: removed a non-Linux dead-code warning and fixed a bogus `cargo zigbuild --version` capability probe that the tool does not support
 - End-to-end path is now proven from MBP16: `cargo check` is clean and `cargo deploy t@momarchy` successfully cross-builds the Linux release, uploads it over SSH, atomically replaces `~/.local/bin/momarchy` and passes the remote `momarchy status` health check
+- Proved the semantic automation interface remotely over ordinary SSH: `momarchy home --automation` exposes stable screen/button IDs, selection, actions and status, and can navigate the real deployed Home without touching the MBP13 keyboard
+- Replaced verbose hand-authored screen tables with a bundled semantic Lua vocabulary: `ui.title`, `ui.subtitle`, `ui.text`, `ui.button` and tiny action helpers. The helper expands to the existing normalized v1 config instead of introducing a DOM or second runtime model
+- Added a single global Lua theme for layout, colors and borders. Ratatui now follows theme columns/gap/margin and configured colors/border style; keyboard navigation follows the chosen column count. No per-button styling, selectors, classes or CSS cascade
+- Kept backwards compatibility: existing normalized version-1 Lua configs still load, while new configs can `require("momarchy.ui")` from the binary with no extra runtime file to install
 
 ## TODO
 
