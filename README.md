@@ -4,7 +4,7 @@
 
 Momarchy is a small open-source side project: make an old laptop simple enough that my mom can just use it.
 
-**Very early development phase (4 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
+**Very early development phase (5 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
 
 ## I don't want your crappy in-progress auto-load Momarchy Home, just tell me how to get standard Omarchy on my 2009 MacBook
 
@@ -155,6 +155,15 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added event-driven Linux inotify hot reload for `.lua` config files — no timer polling. Every reload gets a fresh Lua VM, so normal `require()` modules can be edited and reloaded without stale module state
 - Bad live Lua edits keep the last valid UI running; a bad config on cold start falls back to the embedded known-good config in memory without destroying the broken admin file
 - Added binary/inotify/config tests and checked the whole thing against the Rust 1.88 floor: 10 tests, strict Clippy and release build green; `ldd` confirms the executable has no system Lua dependency
+
+### 2026-09-05 — Day 5
+
+- New WLAN, new archaeology: Tailscale correctly found a direct LAN path between the two MacBooks, but raw LAN ping to the 2009 machine still showed huge latency spikes and initially ~42% packet loss. Kernel logs showed repeated BCM4322/`b43` handshake and `MAC suspend failed` errors. Parked deeper investigation in TODO instead of letting the Wi-Fi sidequest eat the night
+- Removed the artificial Linux-only restriction from `cargo deploy`; MBP16/macOS is now a supported Momarchy development and deployment host instead of requiring a WSL/Linux detour
+- Kept Linux-specific behavior genuinely Linux-specific: inotify hot reload is compiled on Linux targets, while host-side macOS builds simply omit that watcher. `cargo check` now passes cleanly on MBP16 without inventing a fake macOS file-watching abstraction
+- Added macOS -> Linux release cross-builds with Zig + `cargo-zigbuild`, targeting `x86_64-unknown-linux-gnu.2.17` while retaining the generic x86-64 CPU baseline needed by the Core 2 Duo
+- Shook out the small portability bugs during the real run: removed a non-Linux dead-code warning and fixed a bogus `cargo zigbuild --version` capability probe that the tool does not support
+- End-to-end path is now proven from MBP16: `cargo check` is clean and `cargo deploy t@momarchy` successfully cross-builds the Linux release, uploads it over SSH, atomically replaces `~/.local/bin/momarchy` and passes the remote `momarchy status` health check
 
 ## TODO
 
