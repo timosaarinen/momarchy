@@ -1,5 +1,7 @@
+mod config;
 mod home;
 mod status;
+mod watch;
 
 use std::process::ExitCode;
 
