@@ -52,7 +52,7 @@ cargo build --release
 
 ## Lua configuration
 
-Momarchy's Rust executable is the stable engine. Home screens, labels, hints and actions are data in Lua so ordinary UI changes do not require rebuilding or redeploying the binary.
+Momarchy's Rust executable is the stable engine. Home structure, content and actions live in Lua so ordinary UI changes do not require rebuilding the binary.
 
 The canonical default is `lua/init.lua` in this repository. It is compiled into the executable with `include_str!`. On the first `momarchy home` run, if no user configuration exists, Momarchy creates:
 
@@ -64,43 +64,107 @@ The canonical default is `lua/init.lua` in this repository. It is compiled into 
 
 The executable never overwrites an existing user `init.lua`. Once materialized, that file belongs to the machine administrator.
 
-A minimal configuration has this shape:
+### Semantic UI authoring
+
+The preferred authoring surface is the bundled `momarchy.ui` Lua module. It is preloaded by the executable, so there is no extra Lua file to install on the target:
 
 ```lua
-return {
-  version = 1,
+local ui = require("momarchy.ui")
+
+return ui.app {
   home = "home",
 
+  theme = {
+    layout = {
+      columns = 2,
+      gap = 1,
+      margin = 1,
+    },
+    colors = {
+      background = "black",
+      text = "white",
+      muted = "gray",
+      selected_background = "white",
+      selected_text = "black",
+    },
+    border = "rounded",
+  },
+
   screens = {
-    home = {
-      title = "MOMARCHY",
-      subtitle = "Mitä haluat tehdä?",
-      buttons = {
-        {
-          id = "internet",
-          label = "INTERNET",
-          hint = "Avaa selain",
-          action = {
-            open = "https://www.google.fi/",
-            live_message = "Avataan internet.",
-          },
-        },
-      },
+    home = ui.screen {
+      ui.title "MOMARCHY",
+      ui.subtitle "Mitä haluat tehdä?",
+
+      ui.button(
+        "internet",
+        "INTERNET",
+        "Avaa selain",
+        ui.open("https://www.google.fi/", "Avataan internet.")
+      ),
+
+      ui.button("games", "PELIT", "Palikat, Mato...", ui.go "games"),
+    },
+
+    games = ui.screen {
+      ui.title "PELIT",
+      ui.subtitle "Valitse peli",
+      ui.button("back", "TAKAISIN", "Palaa alkuun", ui.go "home"),
     },
   },
 }
 ```
 
-Supported action forms are deliberately small:
+The deliberately small semantic element vocabulary is:
 
-- `action = { screen = "games" }` navigates to another configured screen.
-- `action = { message = "..." }` changes the Home status message.
-- `action = { open = "https://...", live_message = "..." }` launches the target with `xdg-open` when live actions are enabled.
-- `action = { command = { "program", "arg1", "arg2" }, kind = "...", live_message = "..." }` launches a normal host process when live actions are enabled.
+- `ui.title "..."`
+- `ui.subtitle "..."`
+- `ui.text "..."`
+- `ui.button(id, label, hint, action)`
 
-Each action must contain exactly one of `screen`, `message`, `open`, or `command`. Screen targets, button IDs and other structural invariants are validated before a configuration is accepted.
+Actions are similarly small:
 
-Lua's normal `require()` works for future modularization. Momarchy prepends these paths to `package.path`:
+- `ui.go "games"` navigates to another configured screen.
+- `ui.message "..."` changes the Home status message.
+- `ui.open(target, live_message)` launches the target with `xdg-open` when live actions are enabled.
+- `ui.run({ "program", "arg1", ... }, kind, live_message)` launches a normal host process when live actions are enabled.
+
+Stable explicit button IDs are intentional. They are not visible to the user, but they are the automation contract used by commands such as `select games`.
+
+`momarchy.ui` is authoring sugar only. It expands the semantic elements into the same normalized version-1 tables that Rust already parses and validates. Existing verbose `version = 1` configurations therefore remain valid; no schema migration is required just to adopt the nicer authoring syntax.
+
+### Theme
+
+Presentation is global rather than attached to individual elements. This is deliberately closer to a tiny semantic theme than real CSS: no selectors, classes, cascading, specificity or per-button style tables.
+
+Current theme tokens are:
+
+```lua
+theme = {
+  layout = {
+    columns = 2, -- 1..4
+    gap = 1,     -- 0..16 terminal cells
+    margin = 1,  -- 0..16 terminal cells
+  },
+
+  colors = {
+    background = "black",
+    text = "white",
+    muted = "gray",
+    selected_background = "white",
+    selected_text = "black",
+  },
+
+  border = "rounded",
+}
+```
+
+Supported color names are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`, `darkgray` and `white` (`grey` spellings are also accepted). Borders are `plain`, `rounded`, `double` or `thick`.
+
+If `theme` or one of its fields is omitted, Momarchy uses the built-in defaults. Keyboard navigation follows the configured column count.
+
+The Rust boundary stays strict: the Lua result is converted into owned Rust data, all actions and navigation targets are validated, and invalid config never reaches the renderer.
+
+Lua's normal `require()` also works for administrator-created modules. Momarchy prepends these paths to `package.path`:
 
 ```text
 ~/.config/momarchy/?.lua
@@ -184,7 +248,8 @@ Remote SSH access itself is an administrator choice. On Omarchy we currently use
 - Prefer the best-known underlying primitive when it materially improves correctness, idle cost or robustness; for example, kernel inotify rather than periodic file polling.
 - One `momarchy` binary until there is a concrete reason for more.
 - Ratatui + Crossterm for the home UI.
-- Lua is the editable configuration layer; do not invent a second config language or plugin framework without a concrete need.
+- Lua is the editable configuration layer; `momarchy.ui` is a tiny semantic authoring vocabulary, not a DOM or plugin framework.
+- Styling stays in one global theme. Do not add per-element styles, selectors, classes or CSS-like cascading without a concrete need.
 - No Electron.
 - No browser engine embedded just to render the home screen.
 - No async runtime until we have an async problem.
@@ -199,6 +264,6 @@ Remote SSH access itself is an administrator choice. On Omarchy we currently use
 
 `momarchy status` is the first non-UI command and should remain cheap enough to use as a deploy health check.
 
-`momarchy home` is the full-screen TUI. Rust owns terminal mechanics, rendering, input, validated state and launching host actions. Lua owns the fast-changing Home content and navigation model.
+`momarchy home` is the full-screen TUI. Rust owns terminal mechanics, layout/rendering, input, validated state and launching host actions. Lua owns the fast-changing semantic Home document and global theme.
 
 Expected next steps are to fill in the real actions, return to Home cleanly after launched applications, expose a small `doctor` view from existing Linux tools, and only then decide whether a resident daemon is actually useful.
