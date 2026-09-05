@@ -48,7 +48,7 @@ ssh-copy-id <user>@<macbook-hostname-or-ip>
 ssh <user>@<macbook-hostname-or-ip>
 ```
 
-For Momarchy development, this passwordless SSH step is the one manual prerequisite before the repo's `cargo deploy <user>@<target>` command can provision and update the appliance.
+For Momarchy development, this passwordless SSH step is the one manual prerequisite before the repo's `cargo provision <user>@<target>` command can turn a fresh Omarchy machine into the appliance.
 
 For remote administration outside the local network, Tailscale also works cleanly on this hardware:
 
@@ -83,21 +83,29 @@ cargo home
 
 `cargo home` is the normal development UI loop: it stages the current repo `lua/init.lua` under `target/` and launches Momarchy Home against that isolated config, so development always uses the checked-out Lua without touching `~/.config/momarchy`. Host actions stay dry-run unless explicitly enabled.
 
-For a fresh Omarchy deployment target, manually get key-based SSH working first. After that the canonical install/update command is:
+For a fresh Omarchy deployment target, manually get key-based SSH working first. Then explicitly provision the appliance once:
 
 ```bash
-cargo deploy <user>@<target>
+cargo provision <user>@<target>
 ```
 
 For the current reference machine:
 
 ```bash
-cargo deploy t@momarchy
+cargo provision t@momarchy
 ```
 
-The first deploy may ask for the target user's sudo password if privileged package/SDDM changes are actually needed. `cargo deploy` uploads and runs the repo's idempotent target provisioner, which codifies the appliance settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected. It then deploys the binary + repo Lua and runs `momarchy status` plus a headless Home startup as health checks. Later deploys should normally be noninteractive.
+Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package or SDDM work is actually needed. The idempotent repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected. After provisioning succeeds, the same command deploys the current Momarchy binary + repo Lua and runs the normal health checks.
 
-We deliberately do **not** call this `cargo install`: Cargo already uses that command to install Rust crates/binaries on the local machine. Momarchy's operation is remote appliance provisioning + deployment.
+Normal development updates are then deliberately narrower:
+
+```bash
+cargo deploy <user>@<target>
+```
+
+`cargo deploy` never re-runs privileged/system provisioning. It first compares the current repo `install.sh` with the exact provisioner snapshot last applied successfully on the target. If provisioning has never been applied or the script has changed, deploy refuses with a concrete `cargo provision ...` instruction instead of guessing or double-applying system changes. Once provisioning is current, deploy only builds/uploads the binary + repo Lua and runs `momarchy status` plus a headless Home startup.
+
+We deliberately do **not** call either operation `cargo install`: Cargo already uses that command to install Rust crates/binaries on the local machine. Momarchy's operations are remote appliance provisioning and deployment.
 
 For a visual check of the real Wayland target without touching its keyboard:
 
@@ -109,7 +117,7 @@ That delegates the graphical operation to Omarchy itself (`omarchy capture scree
 
 ### Configure Home in Lua
 
-The preferred config is intentionally closer to tiny semantic HTML than a UI framework. Screens contain a few semantic elements; styling lives once in the global theme instead of on every button. The current default uses one vertical menu column; the renderer centers the menu and caps it at 64 terminal cells so it stays game-menu-like fullscreen while naturally shrinking to fit when Hyprland tiles Home beside another app.
+The preferred config is intentionally closer to tiny semantic HTML than a UI framework. Screens contain a few semantic elements; styling lives once in the global theme instead of on every button. The current default uses one vertical menu column; the renderer caps the menu at 64 terminal cells, gives every button the natural text-mode height of border + label + hint (four rows total, no fake blank-line padding), centers the resulting menu when there is spare room, and only compresses vertically when the terminal genuinely cannot fit the natural layout.
 
 ```lua
 local ui = require("momarchy.ui")
@@ -233,7 +241,10 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Rebooted and proved the full path remotely: boot -> SDDM autologin -> Omarchy/Hyprland -> Momarchy Home, with no password prompt. Updated Home autostart to run `momarchy home --live-actions`, so the appliance has real actions while local `cargo home` stays safely dry-run
 - Proved real browser launch on the MBP13. A cold Chromium start can take roughly 20 seconds on the Core 2 Duo/2 GB machine, but once it appears Hyprland tiles it beside the still-running Home exactly like normal Omarchy. That native side-by-side behavior is now explicitly a feature, not something Momarchy should replace
 - Switched the default Home layout from a two-column dashboard to a one-column game-menu style list. The renderer centers the menu and caps it at 64 terminal cells, so it stays comfortably narrow fullscreen while automatically using the available width when Hyprland tiles Home beside another app. Development-only banners/status now use English instead of Finnish
-- Caught the original `install.sh` lagging behind the real appliance. Made `cargo deploy` the canonical fresh-target install/update path: after the developer establishes key-based SSH once, deploy now uploads and runs an idempotent provisioner before the binary/Lua deployment. It codifies the proven Omarchy/Hyprland/SDDM settings and only asks for sudo when a privileged change is actually missing; later deploys should be boring
+- Caught the original `install.sh` lagging behind the real appliance. Turned it into an idempotent provisioner that codifies the proven Omarchy/Hyprland/SDDM settings instead of relying on the dev diary and memory alone
+- Reconsidered running that provisioner on every normal deploy: too much privilege and too much opportunity for a detection bug. Split the lifecycle into explicit `cargo provision` and fast `cargo deploy`; deploy only compares the current provisioner with the last successfully applied snapshot and refuses with a fix instruction if provisioning is missing/stale
+- The first one-column local Home screenshot exposed a text-mode layout bug: stretched rows plus a leading blank line made buttons huge and eventually hid their contents. Buttons now use the natural four-row height (border + label + hint) with no fake vertical padding, centered as a group when space allows and compressed only when necessary
+- The same pass caught a useful stale test: `embedded_config_is_valid` still expected two columns after the default moved to one. Updated the assertion rather than weakening the test
 
 ## TODO
 
