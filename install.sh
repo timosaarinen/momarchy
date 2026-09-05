@@ -311,9 +311,10 @@ EOF
 fi
 
 # Hardware-specific Wi-Fi firmware for the reference 2009 MacBook Pro. Keep the
-# generic installer generic by keying this to the actual PCI ID.
+# generic installer generic by keying this to the actual PCI ID and ask pacman,
+# rather than a guessed firmware path, whether the AUR package is installed.
 if lspci -nn 2>/dev/null | grep -qi '\[14e4:432b\]' \
-  && [[ ! -e /usr/lib/firmware/b43/ucode16_mimo.fw ]]; then
+  && ! pacman -Qq b43-firmware >/dev/null 2>&1; then
   if ! command -v yay >/dev/null 2>&1; then
     printf '%s\n' 'Broadcom BCM4322 detected but b43 firmware is missing.' >&2
     printf '%s\n' 'Install b43-firmware from the AUR (Omarchy normally provides yay), then reboot.' >&2
