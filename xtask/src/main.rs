@@ -8,12 +8,20 @@ use std::{
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
 const ZIG_LINUX_TARGET: &str = "x86_64-unknown-linux-gnu.2.17";
 const REMOTE_SCREENSHOT: &str = "~/.local/state/momarchy/screenshot.png";
-const REMOTE_INSTALLER: &str = "~/.local/state/momarchy/install.sh";
+const REMOTE_PROVISIONER_APPLIED: &str = "~/.local/state/momarchy/install.sh.applied";
+const REMOTE_PROVISIONER_NEW: &str = "~/.local/state/momarchy/install.sh.new";
+const REMOTE_PROVISIONER_CHECK: &str = "~/.local/state/momarchy/install.sh.check";
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
 
     let result = match args.next().as_deref() {
+        Some("provision") => match args.next() {
+            Some(target) => provision(&target),
+            None => Err(
+                "usage: cargo provision <ssh-target>\nexample: cargo provision t@momarchy".into(),
+            ),
+        },
         Some("deploy") => match args.next() {
             Some(target) => deploy(&target),
             None => Err("usage: cargo deploy <ssh-target>\nexample: cargo deploy t@momarchy".into()),
@@ -26,7 +34,7 @@ fn main() -> ExitCode {
             ),
         },
         _ => Err(
-            "xtask commands:\n  home [momarchy-home-options]\n  deploy <ssh-target>\n  screenshot <ssh-target>"
+            "xtask commands:\n  home [momarchy-home-options]\n  provision <ssh-target>\n  deploy <ssh-target>\n  screenshot <ssh-target>"
                 .into(),
         ),
     };
@@ -106,15 +114,81 @@ fn screenshot(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn provision(target: &str) -> Result<(), String> {
+    let root = workspace_root()?;
+    let installer = root.join("install.sh");
+    if !installer.is_file() {
+        return Err(format!("provision input not found: {}", installer.display()));
+    }
+
+    println!("==> preparing provisioning state on {target}");
+    run(Command::new("ssh").arg(target).arg(
+        "mkdir -p \"$HOME/.local/state/momarchy\"",
+    ))?;
+
+    println!("==> uploading target provisioner {}", installer.display());
+    run(Command::new("scp")
+        .arg(&installer)
+        .arg(format!("{target}:{REMOTE_PROVISIONER_NEW}")))?;
+
+    println!("==> provisioning Momarchy appliance settings on {target}");
+    let mut provision = Command::new("ssh");
+    provision.arg("-t").arg(target).arg(
+        "set -eu; new=\"$HOME/.local/state/momarchy/install.sh.new\"; applied=\"$HOME/.local/state/momarchy/install.sh.applied\"; chmod 755 \"$new\"; set +e; bash \"$new\"; status=$?; set -e; if [ \"$status\" -eq 0 ]; then mv -f \"$new\" \"$applied\"; else rm -f \"$new\"; exit \"$status\"; fi",
+    );
+    run(&mut provision).map_err(|error| {
+        format!(
+            "{error}\n\nTarget provisioning failed. Passwordless SSH must already work before `cargo provision`. Provisioning is the explicit operation that may ask for the target user's sudo password when packages or SDDM configuration need privileged changes.\n\nSuggested checks:\n  ssh {target} true\n  ssh -t {target} 'sudo -v'\n  ssh {target} 'command -v omarchy && omarchy --version || true'"
+        )
+    })?;
+
+    println!("==> provisioning is current; deploying Momarchy");
+    deploy_release(target)?;
+    println!("    reboot the target once after first-time provisioning to prove boot -> Momarchy Home");
+    Ok(())
+}
+
 fn deploy(target: &str) -> Result<(), String> {
+    let root = workspace_root()?;
+    let installer = root.join("install.sh");
+    if !installer.is_file() {
+        return Err(format!("deploy input not found: {}", installer.display()));
+    }
+
+    ensure_provision_current(target, &installer)?;
+    deploy_release(target)
+}
+
+fn ensure_provision_current(target: &str, installer: &Path) -> Result<(), String> {
+    println!("==> checking target provisioning state on {target}");
+    run(Command::new("ssh").arg(target).arg(
+        "mkdir -p \"$HOME/.local/state/momarchy\"",
+    ))?;
+
+    run(Command::new("scp")
+        .arg(installer)
+        .arg(format!("{target}:{REMOTE_PROVISIONER_CHECK}")))?;
+
+    let mut check = Command::new("ssh");
+    check.arg(target).arg(
+        "set -eu; check=\"$HOME/.local/state/momarchy/install.sh.check\"; applied=\"$HOME/.local/state/momarchy/install.sh.applied\"; trap 'rm -f \"$check\"' EXIT; [ -f \"$applied\" ] || { printf '%s\\n' 'Momarchy target has not been provisioned with the current workflow.' >&2; exit 1; }; cmp -s \"$check\" \"$applied\" || { printf '%s\\n' 'Momarchy target provisioning is stale relative to this checkout.' >&2; exit 1; }",
+    );
+
+    run(&mut check).map_err(|error| {
+        format!(
+            "{error}\n\nNormal deploys never re-run privileged/system provisioning automatically. Apply the current provisioning explicitly, then deploy will become fast again:\n  cargo provision {target}"
+        )
+    })
+}
+
+fn deploy_release(target: &str) -> Result<(), String> {
     let root = workspace_root()?;
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let binary = build_release(&root, &cargo)?;
     let config = root.join("lua/init.lua");
     let ui_module = root.join("lua/momarchy/ui.lua");
-    let installer = root.join("install.sh");
 
-    for path in [&binary, &config, &ui_module, &installer] {
+    for path in [&binary, &config, &ui_module] {
         if !path.is_file() {
             return Err(format!("deploy input not found: {}", path.display()));
         }
@@ -122,28 +196,8 @@ fn deploy(target: &str) -> Result<(), String> {
 
     println!("==> preparing {target}");
     run(Command::new("ssh").arg(target).arg(
-        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy/momarchy\" \"$HOME/.local/state/momarchy\"",
+        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy/momarchy\"",
     ))?;
-
-    println!("==> uploading target provisioner {}", installer.display());
-    run(Command::new("scp")
-        .arg(&installer)
-        .arg(format!("{target}:{REMOTE_INSTALLER}.new")))?;
-    run(Command::new("ssh").arg(target).arg(
-        "set -eu; chmod 755 \"$HOME/.local/state/momarchy/install.sh.new\"; mv -f \"$HOME/.local/state/momarchy/install.sh.new\" \"$HOME/.local/state/momarchy/install.sh\"",
-    ))?;
-
-    println!("==> provisioning Momarchy appliance settings on {target}");
-    let mut provision = Command::new("ssh");
-    provision
-        .arg("-t")
-        .arg(target)
-        .arg("bash \"$HOME/.local/state/momarchy/install.sh\"");
-    run(&mut provision).map_err(|error| {
-        format!(
-            "{error}\n\nTarget provisioning failed. Passwordless SSH must already work before `cargo deploy`. The first deployment may still ask for the target user's sudo password when it needs to install packages or create the SDDM autologin drop-in.\n\nSuggested checks:\n  ssh {target} true\n  ssh -t {target} 'sudo -v'\n  ssh {target} 'command -v omarchy && omarchy --version || true'"
-        )
-    })?;
 
     println!("==> uploading {}", binary.display());
     run(Command::new("scp")
@@ -165,8 +219,7 @@ fn deploy(target: &str) -> Result<(), String> {
         "set -eu; chmod 755 \"$HOME/.local/bin/momarchy.new\"; mv -f \"$HOME/.config/momarchy/momarchy/ui.lua.new\" \"$HOME/.config/momarchy/momarchy/ui.lua\"; mv -f \"$HOME/.local/bin/momarchy.new\" \"$HOME/.local/bin/momarchy\"; mv -f \"$HOME/.config/momarchy/init.lua.new\" \"$HOME/.config/momarchy/init.lua\"; \"$HOME/.local/bin/momarchy\" status; printf 'quit\\n' | \"$HOME/.local/bin/momarchy\" home --automation >/dev/null",
     ))?;
 
-    println!("==> deployed binary, repo Lua, and appliance configuration to {target}");
-    println!("    first-time provisioning: reboot the target once to prove boot -> Momarchy Home");
+    println!("==> deployed binary and repo Lua to {target}");
     Ok(())
 }
 
