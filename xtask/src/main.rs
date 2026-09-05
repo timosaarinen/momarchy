@@ -3,6 +3,7 @@ use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
+    time::{Duration, Instant},
 };
 
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -257,9 +258,9 @@ fn ensure_ssh_reachable(target: &str, operation: &str) -> Result<(), String> {
     let mut command = ssh_command(target, false);
     command.arg("true");
 
-    run(&mut command).map_err(|error| {
+    run_with_timeout(&mut command, Duration::from_secs(8)).map_err(|error| {
         format!(
-            "{error}\n\nCould not reach {target} over passwordless SSH for {operation}. The target may be powered off, suspended/hibernating, have its lid closed, be off-network, or SSH may not be ready.\n\nSuggested checks:\n  wake/open the target and retry\n  ssh -o BatchMode=yes -o ConnectTimeout=5 {target} true\n\nMomarchy uses one SSH connection attempt with a 5-second connect timeout. Established remote sessions use SSH keepalives so a target that sleeps or drops off the network mid-operation also fails instead of hanging indefinitely."
+            "{error}\n\nCould not reach {target} over passwordless SSH for {operation}. The target may be powered off, suspended/hibernating, have its lid closed, be off-network, or SSH may not be ready.\n\nSuggested checks:\n  wake/open the target and retry\n  ssh -o BatchMode=yes -o ConnectTimeout=5 {target} true\n\nThe reachability probe has an 8-second wall-clock deadline (covering DNS and other stalls), while SSH itself uses one connection attempt with a 5-second connect timeout. Established remote sessions use SSH keepalives so a target that sleeps or drops off the network mid-operation also fails instead of hanging indefinitely."
         )
     })
 }
@@ -369,6 +370,46 @@ fn run(command: &mut Command) -> Result<(), String> {
         Err(format!(
             "command failed\n  command: {command_line}{cwd}\n  status: {status}\n  stdout/stderr: inherited live; see output above"
         ))
+    }
+}
+
+fn run_with_timeout(command: &mut Command, timeout: Duration) -> Result<(), String> {
+    let command_line = command_line(command);
+    let cwd = command_cwd(command);
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "could not start command\n  command: {command_line}{cwd}\n  start error: {error}"
+        )
+    })?;
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "command failed\n  command: {command_line}{cwd}\n  status: {status}\n  stdout/stderr: inherited live; see output above"
+                ));
+            }
+            Ok(None) if started.elapsed() < timeout => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "command timed out\n  command: {command_line}{cwd}\n  timeout: {}s\n  stdout/stderr: inherited live; see output above",
+                    timeout.as_secs()
+                ));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "could not wait for command\n  command: {command_line}{cwd}\n  wait error: {error}"
+                ));
+            }
+        }
     }
 }
 
