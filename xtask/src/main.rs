@@ -8,6 +8,7 @@ use std::{
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
 const ZIG_LINUX_TARGET: &str = "x86_64-unknown-linux-gnu.2.17";
 const REMOTE_SCREENSHOT: &str = "~/.local/state/momarchy/screenshot.png";
+const REMOTE_INSTALLER: &str = "~/.local/state/momarchy/install.sh";
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -111,8 +112,9 @@ fn deploy(target: &str) -> Result<(), String> {
     let binary = build_release(&root, &cargo)?;
     let config = root.join("lua/init.lua");
     let ui_module = root.join("lua/momarchy/ui.lua");
+    let installer = root.join("install.sh");
 
-    for path in [&binary, &config, &ui_module] {
+    for path in [&binary, &config, &ui_module, &installer] {
         if !path.is_file() {
             return Err(format!("deploy input not found: {}", path.display()));
         }
@@ -120,8 +122,28 @@ fn deploy(target: &str) -> Result<(), String> {
 
     println!("==> preparing {target}");
     run(Command::new("ssh").arg(target).arg(
-        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy/momarchy\"",
+        "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/momarchy/momarchy\" \"$HOME/.local/state/momarchy\"",
     ))?;
+
+    println!("==> uploading target provisioner {}", installer.display());
+    run(Command::new("scp")
+        .arg(&installer)
+        .arg(format!("{target}:{REMOTE_INSTALLER}.new")))?;
+    run(Command::new("ssh").arg(target).arg(
+        "set -eu; chmod 755 \"$HOME/.local/state/momarchy/install.sh.new\"; mv -f \"$HOME/.local/state/momarchy/install.sh.new\" \"$HOME/.local/state/momarchy/install.sh\"",
+    ))?;
+
+    println!("==> provisioning Momarchy appliance settings on {target}");
+    let mut provision = Command::new("ssh");
+    provision
+        .arg("-t")
+        .arg(target)
+        .arg("bash \"$HOME/.local/state/momarchy/install.sh\"");
+    run(&mut provision).map_err(|error| {
+        format!(
+            "{error}\n\nTarget provisioning failed. Passwordless SSH must already work before `cargo deploy`. The first deployment may still ask for the target user's sudo password when it needs to install packages or create the SDDM autologin drop-in.\n\nSuggested checks:\n  ssh {target} true\n  ssh -t {target} 'sudo -v'\n  ssh {target} 'command -v omarchy && omarchy --version || true'"
+        )
+    })?;
 
     println!("==> uploading {}", binary.display());
     run(Command::new("scp")
@@ -143,7 +165,8 @@ fn deploy(target: &str) -> Result<(), String> {
         "set -eu; chmod 755 \"$HOME/.local/bin/momarchy.new\"; mv -f \"$HOME/.config/momarchy/momarchy/ui.lua.new\" \"$HOME/.config/momarchy/momarchy/ui.lua\"; mv -f \"$HOME/.local/bin/momarchy.new\" \"$HOME/.local/bin/momarchy\"; mv -f \"$HOME/.config/momarchy/init.lua.new\" \"$HOME/.config/momarchy/init.lua\"; \"$HOME/.local/bin/momarchy\" status; printf 'quit\\n' | \"$HOME/.local/bin/momarchy\" home --automation >/dev/null",
     ))?;
 
-    println!("==> deployed binary and repo Lua to {target}");
+    println!("==> deployed binary, repo Lua, and appliance configuration to {target}");
+    println!("    first-time provisioning: reboot the target once to prove boot -> Momarchy Home");
     Ok(())
 }
 
