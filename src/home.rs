@@ -24,6 +24,8 @@ use crate::{
     watch::{self, WatchEvent},
 };
 
+const MENU_MAX_WIDTH: u16 = 64;
+
 #[derive(Clone, Copy, Default)]
 pub struct Options {
     pub automation: bool,
@@ -196,7 +198,7 @@ impl App {
         let mode = if self.live_actions {
             ""
         } else {
-            "KEHITYSTILA — ulkoisia ohjelmia ei käynnistetä\n"
+            "DEVELOPMENT MODE — external programs are not launched\n"
         };
         let footer = Paragraph::new(format!("{mode}{}", self.status))
             .alignment(Alignment::Center)
@@ -213,9 +215,10 @@ impl App {
             .expect("current screen must exist in validated config")
             .buttons;
         let button_areas = &mut self.button_areas;
+        let menu_area = centered_max_width(area, MENU_MAX_WIDTH);
 
         *button_areas = grid_areas(
-            area,
+            menu_area,
             buttons.len(),
             theme.layout.columns,
             theme.layout.gap,
@@ -343,7 +346,7 @@ impl App {
                     crate::browser::open(&target)?;
                     self.status = live_message;
                 } else {
-                    self.status = format!("KEHITYSTILA — browser: {target}");
+                    self.status = format!("DEVELOPMENT MODE — browser: {target}");
                 }
             }
             Action::Command {
@@ -356,7 +359,8 @@ impl App {
                     Command::new(&program).args(&args).spawn()?;
                     self.status = live_message;
                 } else {
-                    self.status = format!("KEHITYSTILA — {kind}: {program} {}", args.join(" "));
+                    self.status =
+                        format!("DEVELOPMENT MODE — {kind}: {program} {}", args.join(" "));
                 }
             }
         }
@@ -558,6 +562,18 @@ fn inset(area: Rect, amount: u16) -> Rect {
     }
 }
 
+fn centered_max_width(area: Rect, max_width: u16) -> Rect {
+    let width = area.width.min(max_width);
+    let left = area.width.saturating_sub(width) / 2;
+
+    Rect {
+        x: area.x.saturating_add(left),
+        y: area.y,
+        width,
+        height: area.height,
+    }
+}
+
 fn grid_areas(area: Rect, count: usize, columns: u16, gap: u16) -> Vec<Rect> {
     if count == 0 {
         return Vec::new();
@@ -622,5 +638,17 @@ mod tests {
         assert_eq!(areas[1], Rect::new(11, 0, 10, 5));
         assert_eq!(areas[2], Rect::new(0, 6, 10, 5));
         assert_eq!(areas[3], Rect::new(11, 6, 10, 5));
+    }
+
+    #[test]
+    fn menu_width_is_centered_and_capped() {
+        assert_eq!(
+            centered_max_width(Rect::new(10, 2, 100, 20), 64),
+            Rect::new(28, 2, 64, 20)
+        );
+        assert_eq!(
+            centered_max_width(Rect::new(10, 2, 50, 20), 64),
+            Rect::new(10, 2, 50, 20)
+        );
     }
 }
