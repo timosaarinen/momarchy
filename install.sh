@@ -268,7 +268,7 @@ fi
 
 if ! validate_hyprland_config Momarchy; then
   restore_hypr_backup
-  return 1 2>/dev/null || exit 1
+  exit 1
 fi
 
 rm -rf "$HYPR_BACKUP_DIR"
