@@ -99,7 +99,7 @@ That delegates the graphical operation to Omarchy itself (`omarchy capture scree
 
 ### Configure Home in Lua
 
-The preferred config is intentionally closer to tiny semantic HTML than a UI framework. Screens contain a few semantic elements; styling lives once in the global theme instead of on every button:
+The preferred config is intentionally closer to tiny semantic HTML than a UI framework. Screens contain a few semantic elements; styling lives once in the global theme instead of on every button. The current default uses one vertical menu column; the renderer centers the menu and caps it at 64 terminal cells so it stays game-menu-like fullscreen while naturally shrinking to fit when Hyprland tiles Home beside another app.
 
 ```lua
 local ui = require("momarchy.ui")
@@ -108,7 +108,7 @@ return ui.app {
   home = "home",
 
   theme = {
-    layout = { columns = 2, gap = 1, margin = 1 },
+    layout = { columns = 1, gap = 1, margin = 1 },
     colors = {
       background = "black",
       text = "white",
@@ -219,10 +219,13 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Made the repo Lua files the explicit development/deployment source of truth: `cargo home` stages the checked-out `lua/init.lua` into an isolated dev config, while `cargo deploy` replaces the target binary and repo-managed Lua files and validates Home through the automation interface
 - Made browser actions use Omarchy's own `omarchy-launch-browser` instead of pretending `xdg-open` owns the lifecycle. Home stays resident underneath while Omarchy launches/detaches the configured browser; Hyprland owns focus, so closing the browser naturally returns to Home. A missing Omarchy helper falls back to `xdg-open`, and macOS live development uses `open`
 - Proved phase-1 remote visual testing end to end with `cargo screenshot <ssh-target>`. Capture delegates to Omarchy, the PNG comes back over plain SCP, and an asleep MBP13 panel is temporarily woken through Omarchy and returned to sleep after capture. The first real remote screenshot also usefully exposed the next appliance problem: the running Omarchy session was sitting at its password lock screen
+- Turned the reference MacBook into an actual appliance session using Omarchy/SDDM rather than custom login plumbing: added an SDDM autologin drop-in for user `t` and the normal `omarchy.desktop` session, then enabled Omarchy's persistent stay-awake toggle so idle no longer lands on a password lock screen
+- Rebooted and proved the full path remotely: boot -> SDDM autologin -> Omarchy/Hyprland -> Momarchy Home, with no password prompt. Updated Home autostart to run `momarchy home --live-actions`, so the appliance has real actions while local `cargo home` stays safely dry-run
+- Proved real browser launch on the MBP13. A cold Chromium start can take roughly 20 seconds on the Core 2 Duo/2 GB machine, but once it appears Hyprland tiles it beside the still-running Home exactly like normal Omarchy. That native side-by-side behavior is now explicitly a feature, not something Momarchy should replace
+- Switched the default Home layout from a two-column dashboard to a one-column game-menu style list. The renderer centers the menu and caps it at 64 terminal cells, so it stays comfortably narrow fullscreen while automatically using the available width when Hyprland tiles Home beside another app. Development-only banners/status now use English instead of Finnish
 
 ## TODO
 
-- [ ] Make appliance boot/wake land directly in Momarchy Home: verify/configure SDDM autologin for `t` using Omarchy's own `omarchy.desktop` session, keep Home in Omarchy autostart, and remove idle password-lock behavior without coupling any of this to screenshot tooling.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
 - [ ] Verify live inotify config reload and bad-edit recovery on the actual MBP13.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
