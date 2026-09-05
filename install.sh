@@ -139,13 +139,23 @@ if ! omarchy toggle idle status 2>/dev/null | grep -q '"enabled":true'; then
   omarchy toggle idle stay-awake
 fi
 
+sddm_has_setting() {
+  local pattern="$1"
+
+  if [[ -d /etc/sddm.conf.d ]] && grep -RqsE "$pattern" /etc/sddm.conf.d 2>/dev/null; then
+    return 0
+  fi
+
+  [[ -f /etc/sddm.conf ]] && grep -qsE "$pattern" /etc/sddm.conf
+}
+
 # SDDM has no Momarchy CLI for persistent appliance autologin. Use its normal
 # drop-in mechanism, but avoid touching sudo when an equivalent config already
 # exists. The first deploy may therefore ask for the target user's sudo password.
 autologin_user_pattern="^[[:space:]]*User[[:space:]]*=[[:space:]]*${TARGET_USER}[[:space:]]*$"
 autologin_session_pattern='^[[:space:]]*Session[[:space:]]*=[[:space:]]*omarchy\.desktop[[:space:]]*$'
-if ! grep -RqsE "$autologin_user_pattern" /etc/sddm.conf /etc/sddm.conf.d 2>/dev/null \
-  || ! grep -RqsE "$autologin_session_pattern" /etc/sddm.conf /etc/sddm.conf.d 2>/dev/null; then
+if ! sddm_has_setting "$autologin_user_pattern" \
+  || ! sddm_has_setting "$autologin_session_pattern"; then
   printf '==> configuring SDDM autologin for %s (sudo may prompt)\n' "$TARGET_USER"
   temp_autologin="$(mktemp)"
   cat >"$temp_autologin" <<EOF
