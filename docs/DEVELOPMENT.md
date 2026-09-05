@@ -45,6 +45,8 @@ cargo check
 cargo test
 cargo run -- status
 cargo home
+cargo deploy t@momarchy
+cargo screenshot t@momarchy
 cargo build --release
 ```
 
@@ -221,6 +223,24 @@ The binary rename is deliberately simple and same-filesystem. Replacing the exec
 If you want `cargo deploy momarchy` without the `user@` prefix, configure the SSH destination normally in `~/.ssh/config`. Momarchy should not grow its own SSH configuration system.
 
 Tailscale does not change the deployment model. Once the target is reachable through Tailscale/MagicDNS, the same SSH command is used.
+
+## Remote target screenshots
+
+For a visual check of a running Wayland target without physically operating it:
+
+```bash
+cargo screenshot <ssh-target>
+```
+
+For the current MBP13:
+
+```bash
+cargo screenshot t@momarchy
+```
+
+Phase 1 deliberately captures the full Wayland output only. The task uses `systemd-run --user` so `grim` runs inside the graphical user's imported systemd environment, writes a temporary PNG under `~/.local/state/momarchy/`, copies it back over ordinary SCP to `target/screenshots/momarchy.png`, removes the remote temporary file, and opens the local image automatically on macOS.
+
+`grim` is optional development tooling, not a Momarchy runtime dependency. If it is missing, the screenshot task fails with a direct message instead of silently installing anything. There is no screenshot server, resident agent or custom transport protocol.
 
 ## Preparing an Omarchy target
 
