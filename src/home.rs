@@ -25,6 +25,7 @@ use crate::{
 };
 
 const MENU_MAX_WIDTH: u16 = 64;
+const BUTTON_HEIGHT: u16 = 4;
 
 #[derive(Clone, Copy, Default)]
 pub struct Options {
@@ -237,7 +238,7 @@ impl App {
                 .borders(Borders::ALL)
                 .border_type(border_type(theme.border))
                 .style(style);
-            let text = format!("\n{}\n{}", button.label, button.hint);
+            let text = format!("{}\n{}", button.label, button.hint);
             let widget = Paragraph::new(text)
                 .alignment(Alignment::Center)
                 .block(block)
@@ -581,6 +582,16 @@ fn grid_areas(area: Rect, count: usize, columns: u16, gap: u16) -> Vec<Rect> {
 
     let columns = columns.max(1);
     let rows = count.div_ceil(usize::from(columns)) as u16;
+    let natural_height = rows
+        .saturating_mul(BUTTON_HEIGHT)
+        .saturating_add(gap.saturating_mul(rows.saturating_sub(1)));
+    let use_natural_height = area.height >= natural_height;
+    let top = if use_natural_height {
+        area.y
+            .saturating_add(area.height.saturating_sub(natural_height) / 2)
+    } else {
+        area.y
+    };
     let mut areas = Vec::with_capacity(count);
 
     for index in 0..count {
@@ -588,7 +599,14 @@ fn grid_areas(area: Rect, count: usize, columns: u16, gap: u16) -> Vec<Rect> {
         let row = index / columns;
         let column = index % columns;
         let (x, width) = segment(area.x, area.width, columns, gap, column);
-        let (y, height) = segment(area.y, area.height, rows, gap, row);
+        let (y, height) = if use_natural_height {
+            (
+                top.saturating_add(row.saturating_mul(BUTTON_HEIGHT.saturating_add(gap))),
+                BUTTON_HEIGHT,
+            )
+        } else {
+            segment(area.y, area.height, rows, gap, row)
+        };
         areas.push(Rect {
             x,
             y,
@@ -631,13 +649,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grid_respects_columns_and_gap() {
+    fn grid_uses_natural_button_height_when_space_allows() {
         let areas = grid_areas(Rect::new(0, 0, 21, 11), 4, 2, 1);
         assert_eq!(areas.len(), 4);
-        assert_eq!(areas[0], Rect::new(0, 0, 10, 5));
-        assert_eq!(areas[1], Rect::new(11, 0, 10, 5));
-        assert_eq!(areas[2], Rect::new(0, 6, 10, 5));
-        assert_eq!(areas[3], Rect::new(11, 6, 10, 5));
+        assert_eq!(areas[0], Rect::new(0, 1, 10, 4));
+        assert_eq!(areas[1], Rect::new(11, 1, 10, 4));
+        assert_eq!(areas[2], Rect::new(0, 6, 10, 4));
+        assert_eq!(areas[3], Rect::new(11, 6, 10, 4));
+    }
+
+    #[test]
+    fn grid_compresses_only_when_natural_height_does_not_fit() {
+        let areas = grid_areas(Rect::new(0, 0, 21, 7), 4, 2, 1);
+        assert_eq!(areas[0], Rect::new(0, 0, 10, 3));
+        assert_eq!(areas[1], Rect::new(11, 0, 10, 3));
+        assert_eq!(areas[2], Rect::new(0, 4, 10, 3));
+        assert_eq!(areas[3], Rect::new(11, 4, 10, 3));
     }
 
     #[test]
