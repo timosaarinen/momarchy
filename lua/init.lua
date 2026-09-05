@@ -1,8 +1,8 @@
 -- Momarchy Home configuration.
 --
--- This file is compiled into the Momarchy binary and written to
--- ~/.config/momarchy/init.lua on first run. After that, the user's copy is
--- authoritative and can be edited live without rebuilding Momarchy.
+-- This file is compiled into the Momarchy binary and materialized on first run.
+-- Normal runtime reloads/preserves the live copy; an explicit `cargo deploy`
+-- treats this repo copy as authoritative for Momarchy-managed targets.
 
 local ui = require("momarchy.ui")
 
@@ -11,7 +11,7 @@ return ui.app {
 
   theme = {
     layout = {
-      columns = 2,
+      columns = 1,
       gap = 1,
       margin = 1,
     },
