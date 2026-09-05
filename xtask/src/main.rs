@@ -6,6 +6,7 @@ use std::{
 
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
 const ZIG_LINUX_TARGET: &str = "x86_64-unknown-linux-gnu.2.17";
+const REMOTE_SCREENSHOT: &str = "~/.local/state/momarchy/screenshot.png";
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -16,7 +17,16 @@ fn main() -> ExitCode {
             None => Err("usage: cargo deploy <ssh-target>\nexample: cargo deploy t@momarchy".into()),
         },
         Some("home") => dev_home(args.collect()),
-        _ => Err("xtask commands:\n  home [momarchy-home-options]\n  deploy <ssh-target>".into()),
+        Some("screenshot") => match args.next() {
+            Some(target) => screenshot(&target),
+            None => Err(
+                "usage: cargo screenshot <ssh-target>\nexample: cargo screenshot t@momarchy".into(),
+            ),
+        },
+        _ => Err(
+            "xtask commands:\n  home [momarchy-home-options]\n  deploy <ssh-target>\n  screenshot <ssh-target>"
+                .into(),
+        ),
     };
 
     match result {
@@ -54,6 +64,38 @@ fn dev_home(home_args: Vec<String>) -> Result<(), String> {
         .args(home_args);
 
     run(&mut command)
+}
+
+fn screenshot(target: &str) -> Result<(), String> {
+    let root = workspace_root()?;
+    let output_dir = root.join("target/screenshots");
+    let output = output_dir.join("momarchy.png");
+
+    fs::create_dir_all(&output_dir)
+        .map_err(|error| format!("could not create {}: {error}", output_dir.display()))?;
+
+    println!("==> capturing full Wayland output on {target}");
+    run(Command::new("ssh").arg(target).arg(
+        "set -eu; command -v grim >/dev/null 2>&1 || { printf '%s\\n' 'grim is required for Momarchy remote screenshots' >&2; exit 127; }; mkdir -p \"$HOME/.local/state/momarchy\"; systemd-run --user --quiet --wait --collect grim \"$HOME/.local/state/momarchy/screenshot.png\"",
+    ))?;
+
+    println!("==> copying screenshot to {}", output.display());
+    run(Command::new("scp")
+        .arg(format!("{target}:{REMOTE_SCREENSHOT}"))
+        .arg(&output))?;
+
+    let _ = Command::new("ssh")
+        .arg(target)
+        .arg("rm -f \"$HOME/.local/state/momarchy/screenshot.png\"")
+        .status();
+
+    println!("==> screenshot saved to {}", output.display());
+
+    if env::consts::OS == "macos" {
+        run(Command::new("open").arg(&output))?;
+    }
+
+    Ok(())
 }
 
 fn deploy(target: &str) -> Result<(), String> {
