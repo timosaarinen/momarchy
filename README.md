@@ -95,7 +95,9 @@ For the current reference machine:
 cargo provision t@momarchy
 ```
 
-Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package or SDDM work is actually needed. The idempotent repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected. After provisioning succeeds, the same command deploys the current Momarchy binary + repo Lua and runs the normal health checks.
+Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package or SDDM work is actually needed. The repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected.
+
+Provisioning is intentionally **fail-closed and non-destructive**. It only makes exact/owned changes, validates known state before mutation, backs up touched Hyprland files, validates the resulting config, rolls back introduced errors, and stops with an informative manual repair instruction when state is ambiguous. See [docs/PROVISIONING.md](docs/PROVISIONING.md) for the normative policy. After provisioning succeeds, the same command deploys the current Momarchy binary + repo Lua and runs the normal health checks.
 
 Normal development updates are then deliberately narrower:
 
@@ -114,6 +116,15 @@ cargo screenshot t@momarchy
 ```
 
 That delegates the graphical operation to Omarchy itself (`omarchy capture screenshot fullscreen save`), copies the full-screen PNG back over ordinary SSH/SCP as `target/screenshots/momarchy.png`, removes the temporary target copy, and opens the image automatically on macOS. If the target panel is asleep, the command detects that through Hyprland, temporarily wakes it with `omarchy brightness display on`, captures, then restores the display to sleep with `omarchy brightness display off`. The whole asleep-display path is proven on the real MBP13. No screenshot server or custom graphical protocol is involved.
+
+A plain SSH shell does not inherit the running Omarchy/Hyprland environment. For ad-hoc admin/debug commands that need the real graphical session, use the generic session helper instead of reconstructing Wayland environment variables by hand:
+
+```bash
+cargo session t@momarchy hyprctl configerrors
+cargo session t@momarchy hyprctl monitors
+```
+
+See [docs/SESSION.md](docs/SESSION.md) for the intentionally small contract: one generic graphical-session primitive, dedicated commands only when they add real workflow or safety semantics.
 
 ### Configure Home in Lua
 
@@ -155,7 +166,7 @@ return ui.app {
 
 The vocabulary is deliberately tiny: `ui.title`, `ui.subtitle`, `ui.text`, `ui.button`, plus `ui.go`, `ui.message`, `ui.open` and `ui.run` actions. There are no per-element style tables, selectors, classes or CSS-like cascading. Stable explicit button IDs stay because the SSH automation interface uses them (`select games`, `activate`, etc.). Existing verbose version-1 Lua configs remain supported; the DSL expands to the same validated Rust config underneath.
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/deployment rules and [docs/HARDWARE.md](docs/HARDWARE.md) for hardware archaeology.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/deployment rules, [docs/PROVISIONING.md](docs/PROVISIONING.md) for the fail-closed provisioning policy, [docs/SESSION.md](docs/SESSION.md) for remote graphical-session commands, and [docs/HARDWARE.md](docs/HARDWARE.md) for hardware archaeology.
 
 ## Dev diary
 
@@ -245,11 +256,17 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Reconsidered running that provisioner on every normal deploy: too much privilege and too much opportunity for a detection bug. Split the lifecycle into explicit `cargo provision` and fast `cargo deploy`; deploy only compares the current provisioner with the last successfully applied snapshot and refuses with a fix instruction if provisioning is missing/stale
 - The first one-column local Home screenshot exposed a text-mode layout bug: stretched rows plus a leading blank line made buttons huge and eventually hid their contents. Buttons now use the natural four-row height (border + label + hint) with no fake vertical padding, centered as a group when space allows and compressed only when necessary
 - The same pass caught a useful stale test: `embedded_config_is_valid` still expected two columns after the default moved to one. Updated the assertion rather than weakening the test
+- Closing the MBP13 lid while starting a remote provision made the old SSH path look frozen. Remote provision/deploy/screenshot now use bounded passwordless SSH connection attempts plus keepalives; the short reachability probe has a hard wall-clock deadline, while the actual provision is deliberately not given a bogus global timeout that could kill legitimate `pacman`, AUR or sudo work on old hardware
+- The first real `cargo provision` also caught a more serious mistake in our own migration logic: line-based heuristic deletion of an old multi-line `Super+M` Lua binding left `~/.config/hypr/bindings.lua` syntactically broken. Repaired it manually in NeoVIM and promoted the lesson into a normative rule instead of hiding the incident
+- Added [docs/PROVISIONING.md](docs/PROVISIONING.md): provisioning is fail-closed and non-destructive, never heuristically rewrites arbitrary user/Omarchy Lua, backs up touched Hyprland files, validates existing and resulting config, rolls back introduced failures, and stops with precise manual instructions when state is ambiguous. `b43-firmware` detection now asks the package database instead of guessing from one firmware filename
+- Re-ran the repaired path on the real target: all 12 Rust unit tests plus 4 Lua-config integration tests passed, `cargo provision t@momarchy` reported both `validating Hyprland Lua (existing)` and `(Momarchy)`, completed cleanly, deployed the current binary/Lua, and the machine rebooted back into the appliance session
+- Added one generic `cargo session <target> <command> [args...]` escape hatch for commands that need the real Omarchy/Hyprland environment instead of adding a pile of tiny wrappers. Proved it remotely: `cargo session t@momarchy hyprctl configerrors` returned cleanly with no errors and `hyprctl monitors` reported the real Apple LVDS-1 panel at 1280×800. Dedicated commands remain only where they add workflow or safety semantics
 
 ## TODO
 
-- [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
+- [ ] Prove `cargo provision` from a genuinely fresh Omarchy 4.0.2 target (clean VM/machine/user) before treating the installer as handoff-ready; exercise both the normal first-run path and at least one fail-closed/rollback case rather than relying only on the already-hand-tuned MBP13.
 - [ ] Verify live inotify config reload and bad-edit recovery on the actual MBP13.
+- [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, focus, wording and real actions, then do final sizing/geometry checks on the 13-inch target.
 - [ ] Automation should support all useful stable semantic commands plus human-equivalent input, including optional `click x y` for hitbox testing.
@@ -260,6 +277,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] `Pelit`: evaluate existing open-source terminal games first; integrate/fork only mom-worthy ones. Palikat + Mato are the first targets.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
 - [ ] Add a calm colored ASCII-art background through the global theme, likely a Finnish lake/forest scene framing the usable center; keep artwork separate from screen structure and avoid per-screen styling.
+- [ ] Add a hidden developer/admin control for temporary appliance policy overrides such as inhibiting lid-close sleep during remote work; keep it behind a developer hotkey/screen and out of the normal mom-facing menu.
 - [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
 - [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz before changing drivers.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
@@ -272,5 +290,7 @@ Keep normal 2 GB operation out of swap; measure first, optimize only what matter
 For host/desktop operations, prefer an Omarchy-provided primitive first, then an ordinary Arch/Linux primitive, and only write custom Momarchy machinery when neither already fits — especially around Hyprland/Wayland.
 
 Developer/admin command failures should say what was attempted, preserve useful underlying output, report the failing status, and suggest a concrete recovery step when one is known.
+
+`cargo provision` is fail-closed and non-destructive by policy: exact/owned edits only, validate before/after when possible, back up non-Momarchy files before touching them, roll back introduced errors, and stop for manual inspection when state is ambiguous. See [docs/PROVISIONING.md](docs/PROVISIONING.md).
 
 KISS.
