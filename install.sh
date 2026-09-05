@@ -79,6 +79,23 @@ ensure_line() {
   fi
 }
 
+remove_exact_line() {
+  local file="$1"
+  local line="$2"
+  [[ -f "$file" ]] || return 0
+
+  local temp
+  temp="$(mktemp)"
+  awk -v exact="$line" '$0 != exact { print }' "$file" >"$temp"
+
+  if ! cmp -s "$temp" "$file"; then
+    mv -f "$temp" "$file"
+    printf '==> migrated legacy inline Momarchy config in %s\n' "$file"
+  else
+    rm -f "$temp"
+  fi
+}
+
 remove_legacy_home_lines() {
   local file="$1"
   [[ -f "$file" ]] || return 0
@@ -129,6 +146,7 @@ if [[ "$PRODUCT_NAME" == "MacBookPro5,5" ]]; then
 -- Managed by Momarchy install.sh for the 2009 13-inch MacBook Pro.
 hl.config({ input = { numlock_by_default = false } })
 EOF
+  remove_exact_line "$HYPR_DIR/input.lua" 'hl.config({ input = { numlock_by_default = false } })'
   ensure_line "$HYPR_DIR/input.lua" 'dofile(os.getenv("HOME") .. "/.config/momarchy/hypr-input.lua")'
 fi
 
