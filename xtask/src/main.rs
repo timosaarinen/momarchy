@@ -1,7 +1,8 @@
 use std::{
     env, fs,
+    ffi::OsStr,
     path::{Path, PathBuf},
-    process::{Command, ExitCode, Stdio},
+    process::{Command, ExitCode},
 };
 
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -32,7 +33,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("xtask failed: {error}");
+            eprintln!("xtask failed:\n{error}");
             ExitCode::FAILURE
         }
     }
@@ -75,9 +76,15 @@ fn screenshot(target: &str) -> Result<(), String> {
         .map_err(|error| format!("could not create {}: {error}", output_dir.display()))?;
 
     println!("==> capturing full Wayland output on {target}");
-    run(Command::new("ssh").arg(target).arg(
+    let mut capture = Command::new("ssh");
+    capture.arg(target).arg(
         "set -eu; state=\"$HOME/.local/state/momarchy\"; mkdir -p \"$state\"; omarchy_cmd=$(command -v omarchy) || { printf '%s\\n' 'Omarchy screenshot command is unavailable on the target' >&2; exit 127; }; rm -f \"$state\"/screenshot-*.png \"$state/screenshot.png\"; systemd-run --user --pipe --wait --collect --property=RuntimeMaxSec=15s --setenv=PATH=\"$PATH\" --setenv=OMARCHY_SCREENSHOT_DIR=\"$state\" \"$omarchy_cmd\" capture screenshot fullscreen save; shot=$(find \"$state\" -maxdepth 1 -type f -name 'screenshot-*.png' -print -quit); [ -n \"$shot\" ] || { printf '%s\\n' 'Omarchy screenshot command completed without producing a PNG' >&2; exit 1; }; mv -f \"$shot\" \"$state/screenshot.png\"",
-    ))?;
+    );
+    run(&mut capture).map_err(|error| {
+        format!(
+            "{error}\n\nSuggested checks:\n  ssh {target} 'command -v omarchy grim hyprctl'\n  ssh {target} 'systemctl --user show-environment | grep -E \"^(WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE)=\"'\n\nThe screenshot path intentionally delegates to Omarchy first. Any Omarchy/systemd/grim/hyprctl stderr should appear above this summary."
+        )
+    })?;
 
     println!("==> copying screenshot to {}", output.display());
     run(Command::new("scp")
@@ -174,7 +181,7 @@ fn build_release(root: &Path, cargo: &str) -> Result<PathBuf, String> {
             ]))
             .map_err(|error| {
                 format!(
-                    "{error}\nif the Rust Linux target is missing, install it once with `rustup target add {LINUX_TARGET}`"
+                    "{error}\n\nSuggested fix if the Rust Linux target is missing:\n  rustup target add {LINUX_TARGET}"
                 )
             })?;
 
@@ -194,24 +201,86 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn require_command(command: &mut Command, message: &str) -> Result<(), String> {
-    match command
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-    {
-        Ok(status) if status.success() => Ok(()),
-        _ => Err(message.into()),
+    let command_line = command_line(command);
+    let cwd = command_cwd(command);
+    let output = command.output().map_err(|error| {
+        format!(
+            "{message}\n  command: {command_line}{cwd}\n  start error: {error}"
+        )
+    })?;
+
+    if output.status.success() {
+        return Ok(());
     }
+
+    Err(format!(
+        "{message}\n  command: {command_line}{cwd}\n  status: {}{}{}",
+        output.status,
+        captured_output("stdout", &output.stdout),
+        captured_output("stderr", &output.stderr),
+    ))
 }
 
 fn run(command: &mut Command) -> Result<(), String> {
-    let status = command
-        .status()
-        .map_err(|error| format!("could not start command: {error}"))?;
+    let command_line = command_line(command);
+    let cwd = command_cwd(command);
+    let status = command.status().map_err(|error| {
+        format!(
+            "could not start command\n  command: {command_line}{cwd}\n  start error: {error}"
+        )
+    })?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(format!("command exited with {status}"))
+        Err(format!(
+            "command failed\n  command: {command_line}{cwd}\n  status: {status}\n  stdout/stderr: inherited live; see output above"
+        ))
     }
+}
+
+fn command_line(command: &Command) -> String {
+    std::iter::once(command.get_program())
+        .chain(command.get_args())
+        .map(shell_word)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn command_cwd(command: &Command) -> String {
+    command
+        .get_current_dir()
+        .map(|path| format!("\n  working directory: {}", path.display()))
+        .unwrap_or_default()
+}
+
+fn shell_word(value: &OsStr) -> String {
+    let text = value.to_string_lossy();
+    let simple = !text.is_empty()
+        && text.chars().all(|character| {
+            character.is_ascii_alphanumeric() || "-_./:@=+,%".contains(character)
+        });
+
+    if simple {
+        text.into_owned()
+    } else {
+        format!("{text:?}")
+    }
+}
+
+fn captured_output(label: &str, bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("\n  {label}:\n{}", indent(trimmed, "    "))
+    }
+}
+
+fn indent(text: &str, prefix: &str) -> String {
+    text.lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
