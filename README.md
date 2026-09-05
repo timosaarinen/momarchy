@@ -95,7 +95,7 @@ For the current reference machine:
 cargo provision t@momarchy
 ```
 
-Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package or SDDM work is actually needed. The repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected.
+Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package or SDDM work is actually needed. The repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, no pre-sleep session lock while leaving lid suspend intact, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected.
 
 Provisioning is intentionally **fail-closed and non-destructive**. It only makes exact/owned changes, validates known state before mutation, backs up touched Hyprland files, validates the resulting config, rolls back introduced errors, and stops with an informative manual repair instruction when state is ambiguous. See [docs/PROVISIONING.md](docs/PROVISIONING.md) for the normative policy. After provisioning succeeds, the same command deploys the current Momarchy binary + repo Lua and runs the normal health checks.
 
@@ -283,6 +283,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz before changing drivers.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
 - [ ] Keep Q4OS Trinity / other lean GUI Linux as fallback if Omarchy eventually becomes too much for 2 GB.
+- [ ] **Lowest priority:** investigate the broken-looking Omarchy password/lock screen after MBP13 suspend/resume: nearly black/dim display with a tiny/pixel-mess-looking center UI, keypresses briefly wake it, but typing the password still unlocks and the normal Omarchy desktop graphics are fine. Momarchy now disables the pre-sleep session lock, so this screen should not normally appear; only chase it later if it still matters.
 
 ## Guidelines
 
