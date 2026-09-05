@@ -269,6 +269,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, focus, wording and real actions, then do final sizing/geometry checks on the 13-inch target.
+- [ ] **Experiment:** prototype Quickshell as an optional graphical Momarchy Home frontend: keep Rust/Lua as the semantic model and action engine plus Ratatui as the boring fallback, first try a fullscreen Quickshell `FloatingWindow` talking to `momarchy home --automation` over a tiny JSON-lines IPC, and only if that proves simple/reliable on the real MBP13 evaluate integrating it into Omarchy's existing Quickshell shell as a Home/overlay plugin instead of coupling Rust directly to Qt.
 - [ ] Automation should support all useful stable semantic commands plus human-equivalent input, including optional `click x y` for hitbox testing.
 - [ ] Add an optional automation `render` command that dumps the whole virtual Ratatui frame from an in-memory backend when semantic state/actions are not enough.
 - [ ] `Kysy mitä vain`: tiny UI routed to a service on ASUS/Tailscale; no technical backend jargon in mom UI.
