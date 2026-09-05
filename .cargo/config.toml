@@ -1,6 +1,7 @@
 [alias]
 home = "run --package xtask -- home"
 deploy = "run --package xtask -- deploy"
+screenshot = "run --package xtask -- screenshot"
 
 # Deployment targets can be genuinely old x86-64 machines. Keep release builds
 # on the generic x86-64 baseline; never inherit the development machine's AVX2.
