@@ -18,8 +18,16 @@ TARGET_USER="$(id -un)"
 STATE_DIR="$HOME/.local/state/momarchy"
 CONFIG_DIR="$HOME/.config/momarchy"
 HYPR_DIR="$HOME/.config/hypr"
+HYPR_BACKUP_DIR=""
 
 mkdir -p "$HOME/.local/bin" "$CONFIG_DIR" "$STATE_DIR" "$HYPR_DIR"
+
+cleanup() {
+  if [[ -n "$HYPR_BACKUP_DIR" && -d "$HYPR_BACKUP_DIR" ]]; then
+    rm -rf "$HYPR_BACKUP_DIR"
+  fi
+}
+trap cleanup EXIT
 
 missing_packages=()
 
@@ -92,32 +100,140 @@ remove_exact_line() {
 
   if ! cmp -s "$temp" "$file"; then
     mv -f "$temp" "$file"
-    printf '==> migrated legacy inline Momarchy config in %s\n' "$file"
+    printf '==> migrated exact legacy Momarchy line in %s\n' "$file"
   else
     rm -f "$temp"
   fi
 }
 
-remove_legacy_home_lines() {
+legacy_inline_home_present() {
   local file="$1"
-  [[ -f "$file" ]] || return 0
+  [[ -f "$file" ]] || return 1
 
-  local temp
-  temp="$(mktemp)"
-  awk '
-    /-- Momarchy Home/ { next }
-    /org\.momarchy\.home/ { next }
-    /\.local\/bin\/momarchy.* home/ { next }
-    { print }
-  ' "$file" >"$temp"
+  grep -Eq -- '-- Momarchy Home|org\.momarchy\.home|\.local/bin/momarchy.*[[:space:]]home' "$file"
+}
 
-  if ! cmp -s "$temp" "$file"; then
-    mv -f "$temp" "$file"
-    printf '==> migrated legacy inline Momarchy config in %s\n' "$file"
-  else
-    rm -f "$temp"
+refuse_legacy_inline_home() {
+  local file="$1"
+  if legacy_inline_home_present "$file"; then
+    printf 'Legacy inline Momarchy Home config detected in %s.\n' "$file" >&2
+    printf '%s\n' 'Momarchy will not rewrite arbitrary Lua automatically.' >&2
+    printf 'Open %s, remove only the old inline Momarchy Home block, keep normal Omarchy config, then rerun `cargo provision`.\n' "$file" >&2
+    return 1
   fi
 }
+
+hyprland_session_running() {
+  systemctl --user show-environment 2>/dev/null | grep -q '^HYPRLAND_INSTANCE_SIGNATURE='
+}
+
+run_graphical() {
+  systemd-run --user --quiet --pipe --wait --collect \
+    --property=RuntimeMaxSec=10s \
+    --setenv=PATH="$PATH" \
+    "$@"
+}
+
+reload_hyprland() {
+  local reload_bin
+  if reload_bin="$(command -v omarchy-restart-hyprctl 2>/dev/null)"; then
+    run_graphical "$reload_bin"
+  else
+    local hyprctl_bin
+    hyprctl_bin="$(command -v hyprctl)" || {
+      printf '%s\n' 'hyprctl is unavailable; cannot validate Hyprland config.' >&2
+      return 127
+    }
+    run_graphical "$hyprctl_bin" reload
+  fi
+}
+
+hyprland_config_errors() {
+  local hyprctl_bin
+  hyprctl_bin="$(command -v hyprctl)" || {
+    printf '%s\n' 'hyprctl is unavailable; cannot inspect Hyprland config errors.' >&2
+    return 127
+  }
+  run_graphical "$hyprctl_bin" configerrors
+}
+
+validate_hyprland_config() {
+  local phase="$1"
+
+  if ! hyprland_session_running; then
+    printf '==> no running Hyprland session; %s config validation deferred until login\n' "$phase"
+    return 0
+  fi
+
+  printf '==> validating Hyprland Lua (%s)\n' "$phase"
+  reload_hyprland >/dev/null
+
+  local errors
+  errors="$(hyprland_config_errors)"
+  if grep -q '[^[:space:]]' <<<"$errors"; then
+    printf 'Hyprland config errors (%s):\n%s\n' "$phase" "$errors" >&2
+    return 1
+  fi
+}
+
+backup_file() {
+  local file="$1"
+  local key="$2"
+
+  if [[ -e "$file" ]]; then
+    cp -p -- "$file" "$HYPR_BACKUP_DIR/$key"
+  else
+    : >"$HYPR_BACKUP_DIR/$key.absent"
+  fi
+}
+
+restore_file() {
+  local file="$1"
+  local key="$2"
+
+  if [[ -f "$HYPR_BACKUP_DIR/$key.absent" ]]; then
+    rm -f -- "$file"
+  else
+    mkdir -p "$(dirname "$file")"
+    cp -p -- "$HYPR_BACKUP_DIR/$key" "$file"
+  fi
+}
+
+start_hypr_backup() {
+  HYPR_BACKUP_DIR="$(mktemp -d "$STATE_DIR/hypr-config-backup.XXXXXX")"
+  backup_file "$HYPR_DIR/autostart.lua" hypr-autostart.lua
+  backup_file "$HYPR_DIR/bindings.lua" hypr-bindings.lua
+  backup_file "$HYPR_DIR/input.lua" hypr-input.lua
+  backup_file "$CONFIG_DIR/hypr-autostart.lua" momarchy-hypr-autostart.lua
+  backup_file "$CONFIG_DIR/hypr-bindings.lua" momarchy-hypr-bindings.lua
+  backup_file "$CONFIG_DIR/hypr-input.lua" momarchy-hypr-input.lua
+}
+
+restore_hypr_backup() {
+  printf '%s\n' 'Restoring Hyprland files from the pre-provision backup.' >&2
+  restore_file "$HYPR_DIR/autostart.lua" hypr-autostart.lua
+  restore_file "$HYPR_DIR/bindings.lua" hypr-bindings.lua
+  restore_file "$HYPR_DIR/input.lua" hypr-input.lua
+  restore_file "$CONFIG_DIR/hypr-autostart.lua" momarchy-hypr-autostart.lua
+  restore_file "$CONFIG_DIR/hypr-bindings.lua" momarchy-hypr-bindings.lua
+  restore_file "$CONFIG_DIR/hypr-input.lua" momarchy-hypr-input.lua
+
+  if hyprland_session_running; then
+    reload_hyprland >/dev/null || printf '%s\n' 'Warning: could not reload restored Hyprland config.' >&2
+  fi
+}
+
+# Never mutate arbitrary Lua that is already known-bad. Omarchy itself recommends
+# validating Hyprland edits with reload + configerrors.
+validate_hyprland_config existing
+
+# Earlier Momarchy prototypes wrote Home directly into these user files. Do not
+# try to parse/remove arbitrary Lua with grep/awk: ask the developer to remove the
+# old block once, then future provisioning owns only one dofile() hook per file.
+refuse_legacy_inline_home "$HYPR_DIR/autostart.lua"
+refuse_legacy_inline_home "$HYPR_DIR/bindings.lua"
+
+start_hypr_backup
 
 # Own Momarchy's small Hyprland snippets without taking ownership of the user's
 # normal Omarchy config files. The user files only get one dofile() hook each.
@@ -134,8 +250,6 @@ o.bind("SUPER + M", "Momarchy Home", {
 })
 EOF
 
-remove_legacy_home_lines "$HYPR_DIR/autostart.lua"
-remove_legacy_home_lines "$HYPR_DIR/bindings.lua"
 ensure_line "$HYPR_DIR/autostart.lua" 'dofile(os.getenv("HOME") .. "/.config/momarchy/hypr-autostart.lua")'
 ensure_line "$HYPR_DIR/bindings.lua" 'dofile(os.getenv("HOME") .. "/.config/momarchy/hypr-bindings.lua")'
 
@@ -151,6 +265,14 @@ EOF
   remove_exact_line "$HYPR_DIR/input.lua" 'hl.config({ input = { numlock_by_default = false } })'
   ensure_line "$HYPR_DIR/input.lua" 'dofile(os.getenv("HOME") .. "/.config/momarchy/hypr-input.lua")'
 fi
+
+if ! validate_hyprland_config Momarchy; then
+  restore_hypr_backup
+  return 1 2>/dev/null || exit 1
+fi
+
+rm -rf "$HYPR_BACKUP_DIR"
+HYPR_BACKUP_DIR=""
 
 # Omarchy's explicit stay-awake operation is idempotent and is preferable to
 # recreating its idle-state implementation ourselves.
