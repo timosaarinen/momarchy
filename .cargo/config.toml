@@ -1,5 +1,6 @@
 [alias]
 home = "run --package xtask -- home"
+provision = "run --package xtask -- provision"
 deploy = "run --package xtask -- deploy"
 screenshot = "run --package xtask -- screenshot"
 
