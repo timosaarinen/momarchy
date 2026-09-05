@@ -89,6 +89,14 @@ cargo deploy t@momarchy
 
 An explicit deploy treats the repo as source of truth: it builds the Linux release, uploads the binary plus `lua/init.lua` and the tiny Lua UI helper, replaces the target Momarchy files, then runs both `momarchy status` and a headless Home automation startup as cheap health checks. No Git checkout or Rust compiler is needed on the target.
 
+For a visual check of the real Wayland target without touching its keyboard:
+
+```bash
+cargo screenshot t@momarchy
+```
+
+That asks the target's graphical user systemd session to run `grim`, copies the full-screen PNG back over ordinary SSH/SCP as `target/screenshots/momarchy.png`, removes the temporary target copy, and opens the image automatically on macOS. `grim` is optional development tooling rather than a Momarchy runtime dependency.
+
 ### Configure Home in Lua
 
 The preferred config is intentionally closer to tiny semantic HTML than a UI framework. Screens contain a few semantic elements; styling lives once in the global theme instead of on every button:
@@ -210,6 +218,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Kept backwards compatibility: existing normalized version-1 Lua configs still load, while new configs can `require("momarchy.ui")` from the binary with no extra runtime file to install
 - Made the repo Lua files the explicit development/deployment source of truth: `cargo home` stages the checked-out `lua/init.lua` into an isolated dev config, while `cargo deploy` replaces the target binary and repo-managed Lua files and validates Home through the automation interface
 - Made browser actions use Omarchy's own `omarchy-launch-browser` instead of pretending `xdg-open` owns the lifecycle. Home stays resident underneath while Omarchy launches/detaches the configured browser; Hyprland owns focus, so closing the browser naturally returns to Home. A missing Omarchy helper falls back to `xdg-open`, and macOS live development uses `open`
+- Added phase-1 remote visual testing with `cargo screenshot <ssh-target>`: the target graphical user session runs `grim`, the PNG comes back over ordinary SCP to `target/screenshots/momarchy.png`, the remote temporary file is removed, and macOS opens the result automatically. No screenshot service or custom protocol
 
 ## TODO
 
@@ -225,7 +234,6 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] `Pelit`: evaluate existing open-source terminal games first; integrate/fork only mom-worthy ones. Palikat + Mato are the first targets.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
 - [ ] Add a calm colored ASCII-art background through the global theme, likely a Finnish lake/forest scene framing the usable center; keep artwork separate from screen structure and avoid per-screen styling.
-- [ ] Add KISS remote screenshots if local `cargo home` stops being enough for target-parity checks: capture MBP13 Wayland with an existing tool such as `grim`, stream/copy the PNG over SSH, and optionally wrap it as `cargo screenshot <ssh-target>`. No screenshot server or custom protocol.
 - [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
 - [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz before changing drivers.
 - [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
