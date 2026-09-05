@@ -12,7 +12,8 @@ newer Linux / WSL2 / macOS development machine
                 v
 Momarchy target
     ~/.local/bin/momarchy
-    ~/.config/momarchy/init.lua
+    ~/.config/momarchy/
+    small hooks in ~/.config/hypr/
 ```
 
 The source repository, Git history, Cargo registry and Rust compiler stay on the development machine. Lua 5.4 is vendored into the Momarchy executable; the target does not need a separate Lua installation.
@@ -26,7 +27,7 @@ The first deployment target is a 2009 x86-64 MacBook Pro. Release builds therefo
 - `ssh` and `scp` for deployment.
 - On macOS only, Linux cross-build support through Zig + cargo-zigbuild.
 
-Cargo owns Rust dependencies. There is no separate development dependency installer for the Momarchy target.
+Cargo owns Rust dependencies. There is no Rust toolchain or source checkout on the Momarchy target.
 
 On macOS, install the cross-build tools once:
 
@@ -80,7 +81,7 @@ return ui.app {
 
   theme = {
     layout = {
-      columns = 2,
+      columns = 1,
       gap = 1,
       margin = 1,
     },
@@ -132,7 +133,7 @@ Actions are similarly small:
 - `ui.open(target, live_message)` hands a URL to the host browser when live actions are enabled.
 - `ui.run({ "program", "arg1", ... }, kind, live_message)` launches a normal host process when live actions are enabled.
 
-On Omarchy/Linux, `ui.open` uses `omarchy-launch-browser`, so browser selection and detached launch behavior stay with Omarchy. Momarchy does not wait on the browser PID: browsers commonly reuse an existing process, so that PID is not a meaningful lifecycle signal. Home simply stays resident underneath; Hyprland owns window focus, and closing the browser naturally returns to the still-running Home. If the Omarchy helper is missing, Linux falls back to `xdg-open`. macOS live development uses the normal `open` command.
+On Omarchy/Linux, `ui.open` uses `omarchy-launch-browser`, so browser selection and detached launch behavior stay with Omarchy. Momarchy does not wait on the browser PID: browsers commonly reuse an existing process, so that PID is not a meaningful lifecycle signal. Home simply stays resident underneath; Hyprland owns window focus and tiling, and closing the browser naturally returns to the still-running Home. If the Omarchy helper is missing, Linux falls back to `xdg-open`. macOS live development uses the normal `open` command.
 
 Stable explicit button IDs are intentional. They are not visible to the user, but they are the automation contract used by commands such as `select games`.
 
@@ -147,7 +148,7 @@ Current theme tokens are:
 ```lua
 theme = {
   layout = {
-    columns = 2, -- 1..4
+    columns = 1, -- 1..4
     gap = 1,     -- 0..16 terminal cells
     margin = 1,  -- 0..16 terminal cells
   },
@@ -166,7 +167,7 @@ theme = {
 
 Supported color names are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`, `darkgray` and `white` (`grey` spellings are also accepted). Borders are `plain`, `rounded`, `double` or `thick`.
 
-If `theme` or one of its fields is omitted, Momarchy uses the built-in defaults. Keyboard navigation follows the configured column count.
+If `theme` or one of its fields is omitted, Momarchy uses the built-in defaults. Keyboard navigation follows the configured column count. The current renderer centers the menu and caps it at 64 terminal cells so the one-column game-menu layout stays readable both fullscreen and when Hyprland tiles Home beside another app. That cap is deliberately a renderer invariant for now rather than another theme setting.
 
 The Rust boundary stays strict: the Lua result is converted into owned Rust data, all actions and navigation targets are validated, and invalid config never reaches the renderer.
 
@@ -193,9 +194,37 @@ The live TUI has no periodic timer. Terminal input and inotify each block in a s
 
 The automation interface remains deterministic and supports an explicit `reload` command instead of starting the live watcher.
 
+## Fresh Omarchy target
+
+The one manual prerequisite is ordinary SSH access. On a fresh Omarchy target, enable OpenSSH/UFW and copy the development machine's SSH key so this succeeds without a login password prompt:
+
+```bash
+ssh <user>@<target> true
+```
+
+For example, the current reference target uses `t@momarchy`.
+
+After that, the canonical Momarchy install/update command is simply:
+
+```bash
+cargo deploy <user>@<target>
+```
+
+Do not use the name `cargo install` for this workflow. `cargo install` already has a standard Rust meaning: install a crate/binary on the local machine. Momarchy's operation is remote provisioning + deployment, so `cargo deploy` is the clearer project-local command.
+
+The first deploy may ask for the target user's `sudo` password inside the SSH terminal if privileged target changes are actually needed. Later deploys are designed to detect already-correct state and normally remain noninteractive.
+
+After first-time provisioning, reboot the target once and verify the real appliance path:
+
+```text
+boot -> SDDM autologin -> Omarchy session -> Momarchy Home
+```
+
+Tailscale remains optional external remote-access enrollment rather than a Momarchy runtime requirement. Once a target is enrolled, the same `cargo deploy` command works over Tailscale/MagicDNS; Momarchy does not grow a separate deployment protocol.
+
 ## Deployment
 
-The repository uses the common Rust `xtask` pattern for project-local automation. `.cargo/config.toml` exposes the deployment task as:
+The repository uses the common Rust `xtask` pattern for project-local automation. `.cargo/config.toml` exposes:
 
 ```bash
 cargo deploy <ssh-target>
@@ -210,19 +239,31 @@ cargo deploy t@momarchy
 The task:
 
 1. builds an x86-64 Linux `momarchy` release binary (native Cargo on Linux/WSL2, Zig cross-build on macOS);
-2. creates the target Momarchy binary/config directories if needed;
-3. uploads the binary to `~/.local/bin/momarchy.new`;
-4. uploads repo `lua/init.lua` and `lua/momarchy/ui.lua` as staged target config files;
-5. atomically-ish renames the staged files into their normal target paths;
-6. runs `momarchy status` and a headless `momarchy home --automation` startup as cheap health checks.
+2. creates the target Momarchy directories if needed;
+3. uploads the checked-out `install.sh` to `~/.local/state/momarchy/install.sh`;
+4. runs that provisioner through `ssh -t`, so first-time package/SDDM changes can ask for sudo interactively;
+5. uploads the binary to `~/.local/bin/momarchy.new`;
+6. uploads repo `lua/init.lua` and `lua/momarchy/ui.lua` as staged target config files;
+7. atomically-ish renames the staged files into their normal target paths;
+8. runs `momarchy status` and a headless `momarchy home --automation` startup as cheap health checks.
+
+The provisioner is idempotent and currently codifies the appliance settings we proved manually:
+
+- required boring Arch/Omarchy tools are installed only when missing;
+- Home is connected to Omarchy's normal `~/.config/hypr/autostart.lua` through a tiny Momarchy-owned Lua snippet and launches with `--live-actions`;
+- `Super+M` is connected through Omarchy's normal binding API and focuses/launches `org.momarchy.home`;
+- Omarchy's own `omarchy toggle idle stay-awake` primitive disables the idle password-lock/screensaver path;
+- SDDM autologin is configured with its normal drop-in mechanism for the SSH target user and `omarchy.desktop` session;
+- on the reference `MacBookPro5,5`, the proven NumLock override is connected without replacing the rest of `input.lua`;
+- if the Broadcom BCM4322 PCI ID is detected and b43 firmware is missing, the provisioner installs `b43-firmware` through Omarchy's normal `yay`/AUR path.
+
+The user's normal Omarchy Hyprland files are not replaced wholesale. Momarchy writes its small managed snippets under `~/.config/momarchy/` and adds one `dofile(...)` hook to the corresponding user files. The installer also migrates the earlier inline Momarchy Home/autostart lines used during prototyping.
 
 An explicit deploy treats the repo as source of truth and intentionally replaces the target's Momarchy-managed Lua files. Normal runtime still never rewrites an existing config by itself.
 
 The binary rename is deliberately simple and same-filesystem. Replacing the executable does not kill an already running copy; service/TUI restart semantics will be added only when there is a real resident service that needs them.
 
 If you want `cargo deploy momarchy` without the `user@` prefix, configure the SSH destination normally in `~/.ssh/config`. Momarchy should not grow its own SSH configuration system.
-
-Tailscale does not change the deployment model. Once the target is reachable through Tailscale/MagicDNS, the same SSH command is used.
 
 ## Remote target screenshots
 
@@ -243,31 +284,6 @@ Phase 1 deliberately captures the full Wayland output only. The task delegates c
 If all active target displays are asleep through DPMS, the task temporarily wakes them with Omarchy's own `omarchy brightness display on`, performs the capture, then restores sleep with `omarchy brightness display off`. Capture and display-control units have short runtime limits so a broken Wayland/display path cannot hang the development command indefinitely.
 
 `grim` remains an implementation detail of Omarchy's screenshot stack rather than something Momarchy calls directly. There is no screenshot server, resident agent or custom transport protocol.
-
-## Preparing an Omarchy target
-
-The target bootstrap script is `install.sh`. It is safe to run more than once and only installs missing runtime tools currently used by Momarchy.
-
-Because the repo does not need to be cloned on the target, it can be run directly from the public repository:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/timosaarinen/momarchy/main/install.sh | bash
-```
-
-For development targets where you prefer not to pipe remote content into a shell, download/inspect the file first or copy it over SSH and run it locally.
-
-The current runtime/tool assumptions are intentionally boring:
-
-- systemd
-- a terminal emulator (`foot` on Omarchy)
-- NetworkManager / `nmcli`
-- `lm_sensors` / `sensors`
-- OpenSSH
-- Omarchy's `omarchy-launch-browser` for browser handoff (`xdg-open` fallback)
-
-A browser and Tailscale are useful but not hard runtime dependencies of the first binary. Lua itself is not a target dependency because Lua 5.4 is vendored into `momarchy`.
-
-Remote SSH access itself is an administrator choice. On Omarchy we currently use OpenSSH plus its UFW firewall; the bootstrap script does not silently open firewall ports.
 
 ## KISS rules
 
