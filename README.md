@@ -107,6 +107,8 @@ cargo deploy <user>@<target>
 
 `cargo deploy` never re-runs privileged/system provisioning. It first compares the current repo `install.sh` with the exact provisioner snapshot last applied successfully on the target. If provisioning has never been applied or the script has changed, deploy refuses with a concrete `cargo provision ...` instruction instead of guessing or double-applying system changes. Once provisioning is current, deploy only builds/uploads the binary + repo Lua and runs `momarchy status` plus a headless Home startup.
 
+On Linux targets, an already-running Home watches its Lua config directory with inotify, so deployed repo Lua changes reload live in place. Replacing the binary does not replace an already-running process: Rust changes are installed immediately but take effect in Home only after it is restarted, until the safe live-restart TODO is implemented.
+
 We deliberately do **not** call either operation `cargo install`: Cargo already uses that command to install Rust crates/binaries on the local machine. Momarchy's operations are remote appliance provisioning and deployment.
 
 For a visual check of the real Wayland target without touching its keyboard:
@@ -261,9 +263,16 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Added [docs/PROVISIONING.md](docs/PROVISIONING.md): provisioning is fail-closed and non-destructive, never heuristically rewrites arbitrary user/Omarchy Lua, backs up touched Hyprland files, validates existing and resulting config, rolls back introduced failures, and stops with precise manual instructions when state is ambiguous. `b43-firmware` detection now asks the package database instead of guessing from one firmware filename
 - Re-ran the repaired path on the real target: all 12 Rust unit tests plus 4 Lua-config integration tests passed, `cargo provision t@momarchy` reported both `validating Hyprland Lua (existing)` and `(Momarchy)`, completed cleanly, deployed the current binary/Lua, and the machine rebooted back into the appliance session
 - Added one generic `cargo session <target> <command> [args...]` escape hatch for commands that need the real Omarchy/Hyprland environment instead of adding a pile of tiny wrappers. Proved it remotely: `cargo session t@momarchy hyprctl configerrors` returned cleanly with no errors and `hyprctl monitors` reported the real Apple LVDS-1 panel at 1280×800. Dedicated commands remain only where they add workflow or safety semantics
+- First real overnight lid-close test resumed into an Omarchy password screen even though boot autologin and idle stay-awake were already configured. The screen itself looked badly broken/dim, but entering the password still returned to normal Omarchy graphics
+- Traced that password gate to Omarchy's separate user-level `omarchy-sleep-lock.service`, not SDDM or idle locking. Updated provisioning to verify and mask only that pre-sleep lock service while deliberately leaving systemd/logind lid suspend untouched; the next real lid close/open resumed without a password as intended
+- Confirmed current deploy semantics during a UI edit: repo Lua changes are genuinely live on the running Linux Home through inotify, while a newly deployed Rust binary only affects the next Home process for now
+- Repeated lid testing exposed the serious hardware blocker hiding behind the earlier lock-screen distraction: one resume left the MBP13 totally black and unreachable, with no keyboard response, no useful short power-button response and no SSH; a long power-button forced shutdown recovered it
+- Previous-boot logs show several successful deep-S3 resumes, but also real `nouveau` GeForce 9400M faults around Quickshell and one `mac80211`/`cfg80211` resume allocation failure followed by `Hardware became unavailable upon resume`. The final failed cycle is more fundamental-looking: its journal stops at `PM: suspend entry (deep)` with no recorded lid-open/wake/`PM: suspend exit`, so root cause is still open rather than pinned on graphics or Wi-Fi
+- Promoted suspend/resume reliability to an appliance-critical investigation and wrote the evidence/next controlled isolation steps into [docs/HARDWARE.md](docs/HARDWARE.md): inspect available sleep modes/wake sources first, then try temporary `s2idle` if supported and a separate deep-suspend test with Wi-Fi disabled before changing persistent kernel settings or blaming Quickshell
 
 ## TODO
 
+- [ ] Make MBP13 lid suspend/resume boringly reliable before handoff: repeated ACPI S3/deep cycles are intermittent and one hard hang required forced power-off with no SSH or recorded wake; first inspect `/sys/power/mem_sleep` + `/proc/acpi/wakeup`, then isolate temporary `s2idle` if available and deep suspend with Wi-Fi disabled before persistent kernel/driver changes. See `docs/HARDWARE.md`.
 - [ ] Prove `cargo provision` from a genuinely fresh Omarchy 4.0.2 target (clean VM/machine/user) before treating the installer as handoff-ready; exercise both the normal first-run path and at least one fail-closed/rollback case rather than relying only on the already-hand-tuned MBP13.
 - [ ] Verify live inotify config reload and bad-edit recovery on the actual MBP13.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
@@ -279,9 +288,9 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
 - [ ] Add a calm colored ASCII-art background through the global theme, likely a Finnish lake/forest scene framing the usable center; keep artwork separate from screen structure and avoid per-screen styling.
 - [ ] Add a hidden developer/admin control for temporary appliance policy overrides such as inhibiting lid-close sleep during remote work; keep it behind a developer hotkey/screen and out of the normal mom-facing menu.
-- [ ] Test audio, suspend/resume, browser video and long-running stability on the MacBook.
+- [ ] Test audio, browser video and long-running stability on the MacBook.
 - [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz before changing drivers.
-- [ ] Add safe live update/restart behavior once there is actually a resident Momarchy service to restart.
+- [ ] Make `cargo deploy` restart Home safely after Rust updates **only if Home was already running**; if the user had closed Home, leave it closed. Lua/config changes already hot-reload in place.
 - [ ] Keep Q4OS Trinity / other lean GUI Linux as fallback if Omarchy eventually becomes too much for 2 GB.
 - [ ] **Lowest priority:** investigate the broken-looking Omarchy password/lock screen after MBP13 suspend/resume: nearly black/dim display with a tiny/pixel-mess-looking center UI, keypresses briefly wake it, but typing the password still unlocks and the normal Omarchy desktop graphics are fine. Momarchy now disables the pre-sleep session lock, so this screen should not normally appear; only chase it later if it still matters.
 
