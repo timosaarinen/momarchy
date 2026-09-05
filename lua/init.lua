@@ -40,13 +40,6 @@ return ui.app {
       ),
 
       ui.button(
-        "email",
-        "SÄHKÖPOSTI",
-        "Lue ja lähetä viestejä",
-        ui.message "Sähköposti otetaan käyttöön seuraavaksi."
-      ),
-
-      ui.button(
         "photos",
         "KUVAT",
         "Katso kuvia",
