@@ -49,6 +49,7 @@ cargo home
 cargo provision t@momarchy
 cargo deploy t@momarchy
 cargo screenshot t@momarchy
+cargo session t@momarchy hyprctl configerrors
 cargo build --release
 ```
 
@@ -213,7 +214,9 @@ cargo provision <user>@<target>
 
 Do not use the name `cargo install` for this workflow. `cargo install` already has a standard Rust meaning: install a crate/binary on the local machine. Momarchy's operation is remote appliance provisioning, so `cargo provision` is the clearer project-local command.
 
-Provisioning is allowed to change packages and system/session configuration and may ask for the target user's `sudo` password inside the SSH terminal when privileged work is actually needed. It is idempotent, but it is **not** run implicitly on every deploy. After a successful provision, the exact `install.sh` that was applied is retained under the target's Momarchy state directory as the provisioning contract. The provision command then deploys the current binary + Lua too, so a fresh target still needs only one Momarchy command after SSH is ready.
+Provisioning is allowed to change packages and system/session configuration and may ask for the target user's `sudo` password inside the SSH terminal when privileged work is actually needed. It is idempotent, but it is **not** run implicitly on every deploy. It is also deliberately fail-closed and non-destructive: unexpected or ambiguous target state stops with an informative manual repair/check rather than triggering heuristic rewrites. See [PROVISIONING.md](PROVISIONING.md) for the normative safety contract.
+
+After a successful provision, the exact `install.sh` that was applied is retained under the target's Momarchy state directory as the provisioning contract. The provision command then deploys the current binary + Lua too, so a fresh target still needs only one Momarchy command after SSH is ready.
 
 After first-time provisioning, reboot the target once and verify the real appliance path:
 
@@ -239,9 +242,11 @@ The provisioner currently codifies the appliance settings we proved manually:
 - Omarchy's own `omarchy toggle idle stay-awake` primitive disables the idle password-lock/screensaver path;
 - SDDM autologin is configured with its normal drop-in mechanism for the SSH target user and `omarchy.desktop` session;
 - on the reference `MacBookPro5,5`, the proven NumLock override is connected without replacing the rest of `input.lua`;
-- if the Broadcom BCM4322 PCI ID is detected and b43 firmware is missing, the provisioner installs `b43-firmware` through Omarchy's normal `yay`/AUR path.
+- if the Broadcom BCM4322 PCI ID is detected and the `b43-firmware` package is missing, the provisioner installs it through Omarchy's normal `yay`/AUR path.
 
-The user's normal Omarchy Hyprland files are not replaced wholesale. Momarchy writes its small managed snippets under `~/.config/momarchy/` and adds one `dofile(...)` hook to the corresponding user files. The installer also migrates the earlier inline Momarchy Home/autostart lines used during prototyping.
+The user's normal Omarchy Hyprland files are not replaced wholesale. Momarchy writes its small managed snippets under `~/.config/momarchy/` and adds one exact `dofile(...)` hook to the corresponding user files. It does **not** heuristically migrate or delete arbitrary Lua. If legacy inline Momarchy code or pre-existing config errors make the state ambiguous, provisioning stops and tells the developer what file to inspect manually.
+
+When a graphical session is running, provisioning validates Hyprland before mutation and again after adding Momarchy hooks using the real Omarchy/Hyprland reload + `hyprctl configerrors` path. Touched Hyprland files are backed up before editing; if Momarchy introduces a validation error, the previous files are restored. This behavior is part of the normative [provisioning policy](PROVISIONING.md), not an optional convenience.
 
 A successful provision stores the exact applied script as:
 
@@ -282,6 +287,19 @@ The binary rename is deliberately simple and same-filesystem. Replacing the exec
 
 If you want `cargo deploy momarchy` without the `user@` prefix, configure the SSH destination normally in `~/.ssh/config`. Momarchy should not grow its own SSH configuration system.
 
+## Remote graphical session commands
+
+A plain SSH shell does not inherit Omarchy's graphical Wayland/Hyprland environment. For ad-hoc noninteractive admin/debug commands that need that real session, use the generic helper:
+
+```bash
+cargo session t@momarchy hyprctl configerrors
+cargo session t@momarchy hyprctl monitors
+```
+
+It runs the command through the target user's `systemd --user` environment, preserves stdout/stderr and status, and uses the same bounded SSH reachability policy as the other remote commands. Arguments are passed directly; invoke `sh -lc` explicitly only when shell syntax is actually needed. See [SESSION.md](SESSION.md) for details.
+
+Keep dedicated project commands when they add real workflow semantics or safety. `cargo screenshot` remains a dedicated command because it handles display sleep, capture, restore, transfer and local opening; `cargo provision` remains dedicated because it owns the cautious provisioning contract.
+
 ## Remote target screenshots
 
 For a visual check of a running Wayland target without physically operating it:
@@ -308,6 +326,7 @@ If all active target displays are asleep through DPMS, the task temporarily wake
 - Prefer existing operations in this order: **Omarchy first, then ordinary Arch/Linux, then Momarchy-specific code only when the lower layers do not already solve the problem cleanly**. This matters especially for graphical/session operations where Omarchy already owns Hyprland/Wayland conventions.
 - Prefer the best-known underlying primitive when it materially improves correctness, idle cost or robustness; for example, kernel inotify rather than periodic file polling.
 - Developer/admin failures must be self-explaining: show what operation and command were attempted, preserve useful child stdout/stderr, report start/exit status, and include concrete recovery checks or fix suggestions when known. Do not replace useful diagnostics with a bare exit code, and do not dump unrelated environment/secrets just for verbosity.
+- Provisioning is fail-closed and non-destructive by policy: exact/owned edits only, validate before/after when possible, back up non-Momarchy files before touching them, roll back introduced errors, and stop for manual inspection when state is ambiguous. See [PROVISIONING.md](PROVISIONING.md).
 - One `momarchy` binary until there is a concrete reason for more.
 - Ratatui + Crossterm for the home UI.
 - Lua is the editable configuration layer; `momarchy.ui` is a tiny semantic authoring vocabulary, not a DOM or plugin framework.
