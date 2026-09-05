@@ -48,13 +48,36 @@ Installing the AUR package `b43-firmware` supplied the missing firmware. After r
 
 A cold reboot with Ethernet unplugged verified that NetworkManager auto-connects to the saved Wi-Fi network. IPv4, IPv6, DNS and SSH over Wi-Fi all worked. Keep `b43`; there is no reason to switch to proprietary `broadcom-wl` unless real instability appears later.
 
+One later crowded 2.4 GHz WLAN exposed severe latency/packet loss plus repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed` messages. That needs comparison against another AP/hotspot and 5 GHz before changing drivers. Resume testing also caught one `mac80211`/`cfg80211` `wiphy_resume` path failing an order-2 page allocation and printing `Hardware became unavailable upon resume`; that is a clue, not yet proof that Wi-Fi causes the intermittent hard resume hang described below.
+
+### Suspend/resume
+
+Lid close currently goes through normal systemd/logind suspend and enters ACPI S3 (`PM: suspend entry (deep)`), not hibernation. Momarchy intentionally leaves that lid/suspend policy alone.
+
+The appliance policy is separate: SDDM autologin removes the boot password gate, Omarchy stay-awake removes idle locking, and Momarchy masks Omarchy's user-level `omarchy-sleep-lock.service` so suspend does not add a password gate of its own. That change was tested on the real MBP13: a successful lid close/open resumed directly into the existing session without asking for a password while lid suspend still happened normally.
+
+Before the pre-sleep lock was disabled, resume sometimes showed an almost black/dim Omarchy password screen with only a tiny/pixel-mess-looking center UI. Typing the password still unlocked into normal-looking Omarchy graphics. Keep that as a separate low-priority visual investigation unless it still matters after the appliance no-lock policy.
+
+Repeated lid testing then exposed a more serious intermittent failure. Several deep-S3 cycles resumed successfully, including the first overnight sleep of roughly 6h28m and multiple short cycles. One later cycle did not: opening the lid left the panel completely black, keyboard and short power-button presses did nothing, and SSH was unreachable; recovery required a long power-button forced shutdown.
+
+The previous-boot journal is important because it does **not** prove one culprit. On successful resumes, `nouveau` logged real GeForce 9400M faults (`INVALID_OPCODE`, `TRAP_TEXTURE`, `PT_NOT_PRESENT`) involving Quickshell, and one resume hit the Wi-Fi allocation failure noted above. But the final hard-hang attempt ends at `PM: suspend entry (deep)` with no recorded lid-open event, ACPI wake, or `PM: suspend exit`, so Linux never logged far enough into wake to blame Quickshell, `nouveau`, or Wi-Fi specifically.
+
+Treat lid suspend/resume as **not handoff-safe yet**. Do not rely on it unattended/in a bag until repeated resume is boringly reliable. Next investigation should stay controlled and change one variable at a time: inspect `/sys/power/mem_sleep` and `/proc/acpi/wakeup`; if `s2idle` is available, try it temporarily for one boot before any persistent kernel setting; separately test normal deep suspend with Wi-Fi disabled; only then isolate Quickshell/graphics if needed. Avoid cargo-cult kernel parameters until one experiment clearly improves the real machine.
+
+Useful previous-boot evidence commands:
+
+```bash
+journalctl -b -1 -k --no-pager | grep -Ei 'nouveau|drm|suspend|resume|PM:|ACPI|error|fail'
+journalctl -b -1 --no-pager | grep -Ei 'suspend|sleep|lid|nouveau|drm|watchdog|freeze'
+```
+
 ### Open hardware work
 
 Still worth testing for the intended daily-use machine:
 
 ```text
+suspend/resume reliability (critical before handoff)
 audio
-suspend/resume
 browser video / YouTube
 long-running thermal stability
 battery runtime
