@@ -582,10 +582,15 @@ fn grid_areas(area: Rect, count: usize, columns: u16, gap: u16) -> Vec<Rect> {
 
     let columns = columns.max(1);
     let rows = count.div_ceil(usize::from(columns)) as u16;
-    let natural_height = rows
-        .saturating_mul(BUTTON_HEIGHT)
-        .saturating_add(gap.saturating_mul(rows.saturating_sub(1)));
-    let use_natural_height = area.height >= natural_height;
+    let minimum_natural_height = rows.saturating_mul(BUTTON_HEIGHT);
+    let use_natural_height = area.height >= minimum_natural_height;
+    let vertical_gap = if use_natural_height && rows > 1 {
+        gap.min(area.height.saturating_sub(minimum_natural_height) / (rows - 1))
+    } else {
+        0
+    };
+    let natural_height = minimum_natural_height
+        .saturating_add(vertical_gap.saturating_mul(rows.saturating_sub(1)));
     let top = if use_natural_height {
         area.y
             .saturating_add(area.height.saturating_sub(natural_height) / 2)
@@ -601,11 +606,11 @@ fn grid_areas(area: Rect, count: usize, columns: u16, gap: u16) -> Vec<Rect> {
         let (x, width) = segment(area.x, area.width, columns, gap, column);
         let (y, height) = if use_natural_height {
             (
-                top.saturating_add(row.saturating_mul(BUTTON_HEIGHT.saturating_add(gap))),
+                top.saturating_add(row.saturating_mul(BUTTON_HEIGHT.saturating_add(vertical_gap))),
                 BUTTON_HEIGHT,
             )
         } else {
-            segment(area.y, area.height, rows, gap, row)
+            segment(area.y, area.height, rows, 0, row)
         };
         areas.push(Rect {
             x,
@@ -659,10 +664,19 @@ mod tests {
     }
 
     #[test]
-    fn grid_compresses_only_when_natural_height_does_not_fit() {
+    fn grid_drops_vertical_gap_before_button_height() {
+        let areas = grid_areas(Rect::new(0, 0, 21, 8), 4, 2, 1);
+        assert_eq!(areas[0], Rect::new(0, 0, 10, 4));
+        assert_eq!(areas[1], Rect::new(11, 0, 10, 4));
+        assert_eq!(areas[2], Rect::new(0, 4, 10, 4));
+        assert_eq!(areas[3], Rect::new(11, 4, 10, 4));
+    }
+
+    #[test]
+    fn grid_compresses_only_when_button_content_cannot_fit() {
         let areas = grid_areas(Rect::new(0, 0, 21, 7), 4, 2, 1);
-        assert_eq!(areas[0], Rect::new(0, 0, 10, 3));
-        assert_eq!(areas[1], Rect::new(11, 0, 10, 3));
+        assert_eq!(areas[0], Rect::new(0, 0, 10, 4));
+        assert_eq!(areas[1], Rect::new(11, 0, 10, 4));
         assert_eq!(areas[2], Rect::new(0, 4, 10, 3));
         assert_eq!(areas[3], Rect::new(11, 4, 10, 3));
     }
