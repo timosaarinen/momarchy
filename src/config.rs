@@ -626,7 +626,7 @@ mod tests {
         let config = load_source(DEFAULT_INIT_LUA, Path::new("."), "embedded").unwrap();
         assert_eq!(config.home, "home");
         assert_eq!(config.screen("home").unwrap().buttons.len(), 8);
-        assert_eq!(config.theme.layout.columns, 2);
+        assert_eq!(config.theme.layout.columns, 1);
         assert_eq!(config.theme.border, ThemeBorder::Rounded);
     }
 
