@@ -95,7 +95,7 @@ For a visual check of the real Wayland target without touching its keyboard:
 cargo screenshot t@momarchy
 ```
 
-That asks the target's graphical user systemd session to run `grim`, copies the full-screen PNG back over ordinary SSH/SCP as `target/screenshots/momarchy.png`, removes the temporary target copy, and opens the image automatically on macOS. `grim` is optional development tooling rather than a Momarchy runtime dependency.
+That delegates the graphical operation to Omarchy itself (`omarchy capture screenshot fullscreen save`), copies the full-screen PNG back over ordinary SSH/SCP as `target/screenshots/momarchy.png`, removes the temporary target copy, and opens the image automatically on macOS. If the target panel is asleep, the command detects that through Hyprland, temporarily wakes it with `omarchy brightness display on`, captures, then restores the display to sleep with `omarchy brightness display off`. The whole asleep-display path is proven on the real MBP13. No screenshot server or custom graphical protocol is involved.
 
 ### Configure Home in Lua
 
@@ -218,12 +218,13 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Kept backwards compatibility: existing normalized version-1 Lua configs still load, while new configs can `require("momarchy.ui")` from the binary with no extra runtime file to install
 - Made the repo Lua files the explicit development/deployment source of truth: `cargo home` stages the checked-out `lua/init.lua` into an isolated dev config, while `cargo deploy` replaces the target binary and repo-managed Lua files and validates Home through the automation interface
 - Made browser actions use Omarchy's own `omarchy-launch-browser` instead of pretending `xdg-open` owns the lifecycle. Home stays resident underneath while Omarchy launches/detaches the configured browser; Hyprland owns focus, so closing the browser naturally returns to Home. A missing Omarchy helper falls back to `xdg-open`, and macOS live development uses `open`
-- Added phase-1 remote visual testing with `cargo screenshot <ssh-target>`: the target graphical user session runs `grim`, the PNG comes back over ordinary SCP to `target/screenshots/momarchy.png`, the remote temporary file is removed, and macOS opens the result automatically. No screenshot service or custom protocol
+- Proved phase-1 remote visual testing end to end with `cargo screenshot <ssh-target>`. Capture delegates to Omarchy, the PNG comes back over plain SCP, and an asleep MBP13 panel is temporarily woken through Omarchy and returned to sleep after capture. The first real remote screenshot also usefully exposed the next appliance problem: the running Omarchy session was sitting at its password lock screen
 
 ## TODO
 
+- [ ] Make appliance boot/wake land directly in Momarchy Home: verify/configure SDDM autologin for `t` using Omarchy's own `omarchy.desktop` session, keep Home in Omarchy autostart, and remove idle password-lock behavior without coupling any of this to screenshot tooling.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
-- [ ] Verify live inotify config reload, bad-edit recovery and normal boot -> Home behavior on the actual MBP13.
+- [ ] Verify live inotify config reload and bad-edit recovery on the actual MBP13.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, focus, wording and real actions, then do final sizing/geometry checks on the 13-inch target.
 - [ ] Automation should support all useful stable semantic commands plus human-equivalent input, including optional `click x y` for hitbox testing.
@@ -243,6 +244,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 
 Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
 
-If Linux already has a good tool for something, use it. Momarchy code is for the Momarchy-specific parts.
+For host/desktop operations, prefer an Omarchy-provided primitive first, then an ordinary Arch/Linux primitive, and only write custom Momarchy machinery when neither already fits — especially around Hyprland/Wayland.
+
+Developer/admin command failures should say what was attempted, preserve useful underlying output, report the failing status, and suggest a concrete recovery step when one is known.
 
 KISS.
