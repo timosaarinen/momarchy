@@ -48,6 +48,8 @@ ssh-copy-id <user>@<macbook-hostname-or-ip>
 ssh <user>@<macbook-hostname-or-ip>
 ```
 
+For Momarchy development, this passwordless SSH step is the one manual prerequisite before the repo's `cargo deploy <user>@<target>` command can provision and update the appliance.
+
 For remote administration outside the local network, Tailscale also works cleanly on this hardware:
 
 ```bash
@@ -81,13 +83,21 @@ cargo home
 
 `cargo home` is the normal development UI loop: it stages the current repo `lua/init.lua` under `target/` and launches Momarchy Home against that isolated config, so development always uses the checked-out Lua without touching `~/.config/momarchy`. Host actions stay dry-run unless explicitly enabled.
 
-Remote deployment is project-local Cargo automation:
+For a fresh Omarchy deployment target, manually get key-based SSH working first. After that the canonical install/update command is:
+
+```bash
+cargo deploy <user>@<target>
+```
+
+For the current reference machine:
 
 ```bash
 cargo deploy t@momarchy
 ```
 
-An explicit deploy treats the repo as source of truth: it builds the Linux release, uploads the binary plus `lua/init.lua` and the tiny Lua UI helper, replaces the target Momarchy files, then runs both `momarchy status` and a headless Home automation startup as cheap health checks. No Git checkout or Rust compiler is needed on the target.
+The first deploy may ask for the target user's sudo password if privileged package/SDDM changes are actually needed. `cargo deploy` uploads and runs the repo's idempotent target provisioner, which codifies the appliance settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected. It then deploys the binary + repo Lua and runs `momarchy status` plus a headless Home startup as health checks. Later deploys should normally be noninteractive.
+
+We deliberately do **not** call this `cargo install`: Cargo already uses that command to install Rust crates/binaries on the local machine. Momarchy's operation is remote appliance provisioning + deployment.
 
 For a visual check of the real Wayland target without touching its keyboard:
 
@@ -223,6 +233,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Rebooted and proved the full path remotely: boot -> SDDM autologin -> Omarchy/Hyprland -> Momarchy Home, with no password prompt. Updated Home autostart to run `momarchy home --live-actions`, so the appliance has real actions while local `cargo home` stays safely dry-run
 - Proved real browser launch on the MBP13. A cold Chromium start can take roughly 20 seconds on the Core 2 Duo/2 GB machine, but once it appears Hyprland tiles it beside the still-running Home exactly like normal Omarchy. That native side-by-side behavior is now explicitly a feature, not something Momarchy should replace
 - Switched the default Home layout from a two-column dashboard to a one-column game-menu style list. The renderer centers the menu and caps it at 64 terminal cells, so it stays comfortably narrow fullscreen while automatically using the available width when Hyprland tiles Home beside another app. Development-only banners/status now use English instead of Finnish
+- Caught the original `install.sh` lagging behind the real appliance. Made `cargo deploy` the canonical fresh-target install/update path: after the developer establishes key-based SSH once, deploy now uploads and runs an idempotent provisioner before the binary/Lua deployment. It codifies the proven Omarchy/Hyprland/SDDM settings and only asks for sudo when a privileged change is actually missing; later deploys should be boring
 
 ## TODO
 
