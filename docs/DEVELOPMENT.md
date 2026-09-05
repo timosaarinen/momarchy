@@ -238,9 +238,11 @@ For the current MBP13:
 cargo screenshot t@momarchy
 ```
 
-Phase 1 deliberately captures the full Wayland output only. The task uses `systemd-run --user` so `grim` runs inside the graphical user's imported systemd environment, writes a temporary PNG under `~/.local/state/momarchy/`, copies it back over ordinary SCP to `target/screenshots/momarchy.png`, removes the remote temporary file, and opens the local image automatically on macOS.
+Phase 1 deliberately captures the full Wayland output only. The task delegates capture to Omarchy's own `omarchy capture screenshot fullscreen save` command inside the graphical user's systemd environment, writes a temporary PNG under `~/.local/state/momarchy/`, copies it back over ordinary SCP to `target/screenshots/momarchy.png`, removes the remote temporary file, and opens the local image automatically on macOS.
 
-`grim` is optional development tooling, not a Momarchy runtime dependency. If it is missing, the screenshot task fails with a direct message instead of silently installing anything. There is no screenshot server, resident agent or custom transport protocol.
+If all active target displays are asleep through DPMS, the task temporarily wakes them with Omarchy's own `omarchy brightness display on`, performs the capture, then restores sleep with `omarchy brightness display off`. Capture and display-control units have short runtime limits so a broken Wayland/display path cannot hang the development command indefinitely.
+
+`grim` remains an implementation detail of Omarchy's screenshot stack rather than something Momarchy calls directly. There is no screenshot server, resident agent or custom transport protocol.
 
 ## Preparing an Omarchy target
 
@@ -270,7 +272,9 @@ Remote SSH access itself is an administrator choice. On Omarchy we currently use
 ## KISS rules
 
 - KISS means minimum accidental complexity, not choosing a crude or inferior primitive.
+- Prefer existing operations in this order: **Omarchy first, then ordinary Arch/Linux, then Momarchy-specific code only when the lower layers do not already solve the problem cleanly**. This matters especially for graphical/session operations where Omarchy already owns Hyprland/Wayland conventions.
 - Prefer the best-known underlying primitive when it materially improves correctness, idle cost or robustness; for example, kernel inotify rather than periodic file polling.
+- Developer/admin failures must be self-explaining: show what operation and command were attempted, preserve useful child stdout/stderr, report start/exit status, and include concrete recovery checks or fix suggestions when known. Do not replace useful diagnostics with a bare exit code, and do not dump unrelated environment/secrets just for verbosity.
 - One `momarchy` binary until there is a concrete reason for more.
 - Ratatui + Crossterm for the home UI.
 - Lua is the editable configuration layer; `momarchy.ui` is a tiny semantic authoring vocabulary, not a DOM or plugin framework.
