@@ -8,7 +8,6 @@ use std::{
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
 const ZIG_LINUX_TARGET: &str = "x86_64-unknown-linux-gnu.2.17";
 const REMOTE_SCREENSHOT: &str = "~/.local/state/momarchy/screenshot.png";
-const REMOTE_PROVISIONER_APPLIED: &str = "~/.local/state/momarchy/install.sh.applied";
 const REMOTE_PROVISIONER_NEW: &str = "~/.local/state/momarchy/install.sh.new";
 const REMOTE_PROVISIONER_CHECK: &str = "~/.local/state/momarchy/install.sh.check";
 
