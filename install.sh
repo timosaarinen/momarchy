@@ -281,6 +281,20 @@ if ! omarchy toggle idle status 2>/dev/null | grep -q '"enabled":true'; then
   omarchy toggle idle stay-awake
 fi
 
+# Omarchy separately locks the graphical session before logind suspends or
+# hibernates. Momarchy's appliance account intentionally has no password gates,
+# so disable only that user-level pre-sleep lock monitor. Do not change logind's
+# lid-switch or suspend policy: closing the lid must still suspend the machine.
+SLEEP_LOCK_SERVICE="omarchy-sleep-lock.service"
+if ! systemctl --user list-unit-files "$SLEEP_LOCK_SERVICE" --no-legend 2>/dev/null \
+  | grep -q "^${SLEEP_LOCK_SERVICE}[[:space:]]"; then
+  printf 'Expected Omarchy pre-sleep lock service %s was not found.\n' "$SLEEP_LOCK_SERVICE" >&2
+  printf '%s\n' 'Refusing to guess at a replacement service; inspect the installed Omarchy sleep/lock units, then update Momarchy provisioning explicitly.' >&2
+  exit 1
+fi
+printf '%s\n' '==> disabling pre-sleep session lock; lid suspend remains enabled'
+systemctl --user mask --now "$SLEEP_LOCK_SERVICE"
+
 sddm_has_setting() {
   local pattern="$1"
 
@@ -330,5 +344,6 @@ printf '    user: %s\n' "$TARGET_USER"
 printf '%s\n' '    Home: Omarchy autostart, live actions enabled'
 printf '%s\n' '    Home key: Super+M'
 printf '%s\n' '    idle lock/screensaver: disabled (stay awake)'
+printf '%s\n' '    pre-sleep session lock: disabled; lid suspend unchanged'
 printf '%s\n' '    SDDM: appliance autologin configured'
 printf '%s\n' 'A reboot is recommended after first-time provisioning to prove boot -> Home.'
