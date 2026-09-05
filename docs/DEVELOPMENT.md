@@ -6,7 +6,7 @@ Momarchy is intentionally small. The deployment target is an appliance, not a de
 
 ```text
 newer Linux / WSL2 / macOS development machine
-    cargo build / test / deploy
+    cargo build / test / provision / deploy
                 |
                 | SSH (LAN or Tailscale)
                 v
@@ -46,6 +46,7 @@ cargo check
 cargo test
 cargo run -- status
 cargo home
+cargo provision t@momarchy
 cargo deploy t@momarchy
 cargo screenshot t@momarchy
 cargo build --release
@@ -167,7 +168,7 @@ theme = {
 
 Supported color names are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`, `darkgray` and `white` (`grey` spellings are also accepted). Borders are `plain`, `rounded`, `double` or `thick`.
 
-If `theme` or one of its fields is omitted, Momarchy uses the built-in defaults. Keyboard navigation follows the configured column count. The current renderer centers the menu and caps it at 64 terminal cells so the one-column game-menu layout stays readable both fullscreen and when Hyprland tiles Home beside another app. That cap is deliberately a renderer invariant for now rather than another theme setting.
+If `theme` or one of its fields is omitted, Momarchy uses the built-in defaults. Keyboard navigation follows the configured column count. The current renderer caps the menu width at 64 terminal cells. Buttons use their natural text-mode height of four rows total: top border, label + hint content, bottom border. There is no fake blank-line padding. The complete menu is vertically centered when the terminal has spare room and only compressed when the available height is genuinely too small. The width cap and natural button height are deliberately renderer invariants for now rather than more theme settings.
 
 The Rust boundary stays strict: the Lua result is converted into owned Rust data, all actions and navigation targets are validated, and invalid config never reaches the renderer.
 
@@ -204,15 +205,15 @@ ssh <user>@<target> true
 
 For example, the current reference target uses `t@momarchy`.
 
-After that, the canonical Momarchy install/update command is simply:
+After that, explicitly provision the appliance:
 
 ```bash
-cargo deploy <user>@<target>
+cargo provision <user>@<target>
 ```
 
-Do not use the name `cargo install` for this workflow. `cargo install` already has a standard Rust meaning: install a crate/binary on the local machine. Momarchy's operation is remote provisioning + deployment, so `cargo deploy` is the clearer project-local command.
+Do not use the name `cargo install` for this workflow. `cargo install` already has a standard Rust meaning: install a crate/binary on the local machine. Momarchy's operation is remote appliance provisioning, so `cargo provision` is the clearer project-local command.
 
-The first deploy may ask for the target user's `sudo` password inside the SSH terminal if privileged target changes are actually needed. Later deploys are designed to detect already-correct state and normally remain noninteractive.
+Provisioning is allowed to change packages and system/session configuration and may ask for the target user's `sudo` password inside the SSH terminal when privileged work is actually needed. It is idempotent, but it is **not** run implicitly on every deploy. After a successful provision, the exact `install.sh` that was applied is retained under the target's Momarchy state directory as the provisioning contract. The provision command then deploys the current binary + Lua too, so a fresh target still needs only one Momarchy command after SSH is ready.
 
 After first-time provisioning, reboot the target once and verify the real appliance path:
 
@@ -220,11 +221,39 @@ After first-time provisioning, reboot the target once and verify the real applia
 boot -> SDDM autologin -> Omarchy session -> Momarchy Home
 ```
 
-Tailscale remains optional external remote-access enrollment rather than a Momarchy runtime requirement. Once a target is enrolled, the same `cargo deploy` command works over Tailscale/MagicDNS; Momarchy does not grow a separate deployment protocol.
+Tailscale remains optional external remote-access enrollment rather than a Momarchy runtime requirement. Once a target is enrolled, the same provision/deploy commands work over Tailscale/MagicDNS; Momarchy does not grow a separate deployment protocol.
+
+## Provisioning
+
+`.cargo/config.toml` exposes the explicit target provisioner through the project-local Rust `xtask` pattern:
+
+```bash
+cargo provision <ssh-target>
+```
+
+The provisioner currently codifies the appliance settings we proved manually:
+
+- required boring Arch/Omarchy tools are installed only when missing;
+- Home is connected to Omarchy's normal `~/.config/hypr/autostart.lua` through a tiny Momarchy-owned Lua snippet and launches with `--live-actions`;
+- `Super+M` is connected through Omarchy's normal binding API and focuses/launches `org.momarchy.home`;
+- Omarchy's own `omarchy toggle idle stay-awake` primitive disables the idle password-lock/screensaver path;
+- SDDM autologin is configured with its normal drop-in mechanism for the SSH target user and `omarchy.desktop` session;
+- on the reference `MacBookPro5,5`, the proven NumLock override is connected without replacing the rest of `input.lua`;
+- if the Broadcom BCM4322 PCI ID is detected and b43 firmware is missing, the provisioner installs `b43-firmware` through Omarchy's normal `yay`/AUR path.
+
+The user's normal Omarchy Hyprland files are not replaced wholesale. Momarchy writes its small managed snippets under `~/.config/momarchy/` and adds one `dofile(...)` hook to the corresponding user files. The installer also migrates the earlier inline Momarchy Home/autostart lines used during prototyping.
+
+A successful provision stores the exact applied script as:
+
+```text
+~/.local/state/momarchy/install.sh.applied
+```
+
+That snapshot is the drift contract for later deploys. If provisioning code changes in the repository, normal deploys do not guess whether the change is safe to apply automatically; they stop and tell the administrator to run `cargo provision` explicitly.
 
 ## Deployment
 
-The repository uses the common Rust `xtask` pattern for project-local automation. `.cargo/config.toml` exposes:
+Normal development deployment is intentionally narrower:
 
 ```bash
 cargo deploy <ssh-target>
@@ -236,28 +265,16 @@ For the current prototype machine:
 cargo deploy t@momarchy
 ```
 
-The task:
+Before building, deploy copies the current repo `install.sh` to a temporary target path and compares it byte-for-byte with `install.sh.applied`. The temporary file is removed immediately. If the snapshot is missing or differs, deploy fails with a concrete `cargo provision <target>` suggestion. It never re-runs privileged/system provisioning itself.
+
+When provisioning is current, deploy:
 
 1. builds an x86-64 Linux `momarchy` release binary (native Cargo on Linux/WSL2, Zig cross-build on macOS);
-2. creates the target Momarchy directories if needed;
-3. uploads the checked-out `install.sh` to `~/.local/state/momarchy/install.sh`;
-4. runs that provisioner through `ssh -t`, so first-time package/SDDM changes can ask for sudo interactively;
-5. uploads the binary to `~/.local/bin/momarchy.new`;
-6. uploads repo `lua/init.lua` and `lua/momarchy/ui.lua` as staged target config files;
-7. atomically-ish renames the staged files into their normal target paths;
-8. runs `momarchy status` and a headless `momarchy home --automation` startup as cheap health checks.
-
-The provisioner is idempotent and currently codifies the appliance settings we proved manually:
-
-- required boring Arch/Omarchy tools are installed only when missing;
-- Home is connected to Omarchy's normal `~/.config/hypr/autostart.lua` through a tiny Momarchy-owned Lua snippet and launches with `--live-actions`;
-- `Super+M` is connected through Omarchy's normal binding API and focuses/launches `org.momarchy.home`;
-- Omarchy's own `omarchy toggle idle stay-awake` primitive disables the idle password-lock/screensaver path;
-- SDDM autologin is configured with its normal drop-in mechanism for the SSH target user and `omarchy.desktop` session;
-- on the reference `MacBookPro5,5`, the proven NumLock override is connected without replacing the rest of `input.lua`;
-- if the Broadcom BCM4322 PCI ID is detected and b43 firmware is missing, the provisioner installs `b43-firmware` through Omarchy's normal `yay`/AUR path.
-
-The user's normal Omarchy Hyprland files are not replaced wholesale. Momarchy writes its small managed snippets under `~/.config/momarchy/` and adds one `dofile(...)` hook to the corresponding user files. The installer also migrates the earlier inline Momarchy Home/autostart lines used during prototyping.
+2. creates the target Momarchy binary/config directories if needed;
+3. uploads the binary to `~/.local/bin/momarchy.new`;
+4. uploads repo `lua/init.lua` and `lua/momarchy/ui.lua` as staged target config files;
+5. atomically-ish renames the staged files into their normal target paths;
+6. runs `momarchy status` and a headless `momarchy home --automation` startup as cheap health checks.
 
 An explicit deploy treats the repo as source of truth and intentionally replaces the target's Momarchy-managed Lua files. Normal runtime still never rewrites an existing config by itself.
 
