@@ -8,7 +8,7 @@ fi
 
 if ! command -v omarchy >/dev/null 2>&1; then
   printf '%s\n' 'Momarchy target provisioning expects an existing Omarchy installation.' >&2
-  printf '%s\n' 'Install Omarchy first, enable SSH, then run cargo deploy <ssh-target> from the development machine.' >&2
+  printf '%s\n' 'Install Omarchy first, enable passwordless SSH, then run cargo provision <ssh-target> from the development machine.' >&2
   exit 1
 fi
 
@@ -151,7 +151,8 @@ sddm_has_setting() {
 
 # SDDM has no Momarchy CLI for persistent appliance autologin. Use its normal
 # drop-in mechanism, but avoid touching sudo when an equivalent config already
-# exists. The first deploy may therefore ask for the target user's sudo password.
+# exists. Explicit provisioning may therefore ask for the target user's sudo
+# password; normal cargo deploy never runs this logic.
 autologin_user_pattern="^[[:space:]]*User[[:space:]]*=[[:space:]]*${TARGET_USER}[[:space:]]*$"
 autologin_session_pattern='^[[:space:]]*Session[[:space:]]*=[[:space:]]*omarchy\.desktop[[:space:]]*$'
 if ! sddm_has_setting "$autologin_user_pattern" \
