@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+trap 'status=$?; line=$LINENO; command=$BASH_COMMAND; printf "Momarchy provisioning failed at line %s while running: %s (exit %s)\n" "$line" "$command" "$status" >&2; exit "$status"' ERR
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   printf '%s\n' 'Momarchy target provisioning currently supports Linux only.' >&2
