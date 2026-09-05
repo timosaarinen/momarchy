@@ -76,7 +76,7 @@ fn screenshot(target: &str) -> Result<(), String> {
 
     println!("==> capturing full Wayland output on {target}");
     run(Command::new("ssh").arg(target).arg(
-        "set -eu; command -v grim >/dev/null 2>&1 || { printf '%s\\n' 'grim is required for Momarchy remote screenshots' >&2; exit 127; }; mkdir -p \"$HOME/.local/state/momarchy\"; systemd-run --user --quiet --wait --collect grim \"$HOME/.local/state/momarchy/screenshot.png\"",
+        "set -eu; state=\"$HOME/.local/state/momarchy\"; mkdir -p \"$state\"; omarchy_cmd=$(command -v omarchy) || { printf '%s\\n' 'Omarchy screenshot command is unavailable on the target' >&2; exit 127; }; rm -f \"$state\"/screenshot-*.png \"$state/screenshot.png\"; systemd-run --user --quiet --wait --collect --property=RuntimeMaxSec=15s --setenv=OMARCHY_SCREENSHOT_DIR=\"$state\" \"$omarchy_cmd\" capture screenshot fullscreen save; shot=$(find \"$state\" -maxdepth 1 -type f -name 'screenshot-*.png' -print -quit); [ -n \"$shot\" ] || { printf '%s\\n' 'Omarchy screenshot command completed without producing a PNG' >&2; exit 1; }; mv -f \"$shot\" \"$state/screenshot.png\"",
     ))?;
 
     println!("==> copying screenshot to {}", output.display());
