@@ -71,26 +71,17 @@
       text-underline-offset: 3px;
     }
 
-    .pdf-preview {
-      position: relative;
+    .sheet-link {
+      display: block;
+      width: min(640px, 100%);
+      margin: 22px auto 0;
+    }
+
+    .sheet {
+      display: block;
       width: 100%;
-      height: min(760px, 90vw);
-      margin-top: 22px;
-      overflow: hidden;
+      height: auto;
       border: 1px solid #ddd;
-      background: #fff;
-    }
-
-    .pdf-preview iframe {
-      width: 100%;
-      height: 100%;
-      border: 0;
-      pointer-events: none;
-    }
-
-    .pdf-preview a {
-      position: absolute;
-      inset: 0;
     }
 
     .small {
@@ -131,15 +122,10 @@
     <section lang="fi">
       <h2>Omarchy — pikaohje</h2>
       <p>Tämä yhden sivun suomenkielinen pikaohje syntyi Momarchyn sivutuotteena ja saattaa olla hyödyllinen muillekin Omarchy-käyttäjille.</p>
-      <p class="small">Klikkaa esikatselua avataksesi PDF:n. Pikanäppäimet voivat muuttua Omarchy-päivityksissä — tarkista tarvittaessa SUPER + K.</p>
-      <div class="pdf-preview">
-        <iframe
-          src="omarchy-pikaohje-a4.pdf#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0"
-          title="Omarchy — pikaohje PDF-esikatselu"
-          loading="lazy"
-        ></iframe>
-        <a href="omarchy-pikaohje-a4.pdf" aria-label="Avaa Omarchy-pikaohje PDF"></a>
-      </div>
+      <p class="small">Klikkaa kuvaa avataksesi PDF:n. Pikanäppäimet voivat muuttua Omarchy-päivityksissä — tarkista tarvittaessa SUPER + K.</p>
+      <a class="sheet-link" href="omarchy-pikaohje-a4.pdf" aria-label="Avaa Omarchy-pikaohje PDF">
+        <img class="sheet" src="images/omarchy-pikaohje-preview.webp" alt="Omarchy — pikaohje, yhden sivun suomenkielinen pikanäppäinohje">
+      </a>
     </section>
   </main>
 </body>
