@@ -3,7 +3,10 @@ name = "momarchy"
 version = "0.0.1"
 edition = "2024"
 rust-version = "1.88"
-description = "A tiny appliance-like home UI for a non-technical Linux user"
+description = "Momarchy: an appliance-like Omarchy/Linux home UI for elderly and non-technical users"
+repository = "https://github.com/timosaarinen/momarchy"
+license = "MIT"
+keywords = ["omarchy", "linux", "ratatui", "accessibility", "old-hardware"]
 publish = false
 
 [dependencies]
