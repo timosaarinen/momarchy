@@ -2,6 +2,7 @@ mod browser;
 mod config;
 mod home;
 mod status;
+mod tv;
 mod watch;
 
 use std::process::ExitCode;
