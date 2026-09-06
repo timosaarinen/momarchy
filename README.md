@@ -279,7 +279,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Took the safer appliance route instead of spending more critical-path time on flaky 2009-MacBook suspend semantics: Momarchy should simply stay running until the user explicitly shuts it down
 - Made that policy structural in provisioning instead of another temporary developer inhibitor. Momarchy now writes its own systemd `sleep.conf.d` drop-in with suspend/hibernate/hybrid modes disabled and a `logind.conf.d` drop-in that ignores lid-close plus suspend/hibernate keys on battery or external power
 - Kept Omarchy's stay-awake mode and the masked `omarchy-sleep-lock.service` as complementary layers: no idle lock, no pre-sleep password gate, and now no normal system sleep path to trigger either resume bug in the first place
-- Preserved the deep-S3/`s2idle` evidence in `docs/HARDWARE.md` but removed suspend reliability from the handoff-critical path. If sleep ever becomes worth having later, investigate it as an optional feature rather than making mom beta-test old-NVIDIA/ACPI archaeology :D
+- Preserved the deep-S3/`s2idle` evidence in `docs/HARDWARE.md` but removed suspend reliability from the handoff-critical path. If sleep ever becomes worth having later, investigate it as an optional feature rather than making mom beta-test old-NVIDIA/ACPI archaeology..
 
 ## TODO
 
