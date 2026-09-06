@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Momarchy — a tiny open-source project for making an old laptop simple enough that mom can just use it.">
+  <title>Momarchy</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #161616;
+      background: #fff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px 20px 56px;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+
+    main {
+      width: min(900px, 100%);
+      margin: 0 auto;
+    }
+
+    .logo {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin: 0 0 34px;
+    }
+
+    section {
+      padding: 28px 0;
+      border-top: 1px solid #ddd;
+    }
+
+    section:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    h1, h2 {
+      line-height: 1.2;
+      margin: 0 0 16px;
+    }
+
+    h1 { font-size: clamp(28px, 5vw, 42px); }
+    h2 { font-size: clamp(24px, 4vw, 32px); }
+
+    p { margin: 0 0 14px; }
+
+    .status {
+      font-weight: 700;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+      margin-top: 20px;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    .pdf-preview {
+      position: relative;
+      width: 100%;
+      height: min(760px, 90vw);
+      margin-top: 22px;
+      overflow: hidden;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+
+    .pdf-preview iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      pointer-events: none;
+    }
+
+    .pdf-preview a {
+      position: absolute;
+      inset: 0;
+    }
+
+    .small {
+      font-size: 0.92em;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="images/momarchy-logo.png" alt="Momarchy">
+
+    <section lang="fi">
+      <h1>Momarchy</h1>
+      <p>Momarchy on pieni avoimen lähdekoodin sivuprojekti: tarkoitus on tehdä vanhasta läppäristä tarpeeksi yksinkertainen, että äiti voi vain käyttää sitä.</p>
+      <p>Pohjana on <a href="https://omarchy.org/">Omarchy</a>. Momarchy Home yrittää piilottaa suurimman osan tietokonejutuista muutaman selvän valinnan taakse.</p>
+      <p class="status">Erittäin varhaisessa kehitysvaiheessa — tämä muuttuu vielä nopeasti.</p>
+      <p>Momarchy on tällä hetkellä suunnattu suomalaiselle käyttäjälle. Lokalisointituki saattaa tulla myöhemmin. Ei lupauksia :D</p>
+      <div class="links">
+        <a href="https://github.com/timosaarinen/momarchy">GitHub</a>
+        <a href="https://github.com/timosaarinen/momarchy#readme">README</a>
+        <a href="omarchy-pikaohje-a4.pdf">Omarchy-pikaohje (PDF)</a>
+      </div>
+    </section>
+
+    <section lang="en">
+      <h2>English</h2>
+      <p>Momarchy is a small open-source side project: make an old laptop simple enough that my mom can just use it.</p>
+      <p>It is built on <a href="https://omarchy.org/">Omarchy</a>. Momarchy Home tries to hide most of the computer-y parts behind a few obvious choices.</p>
+      <p class="status">Very early development — expect things to change quickly.</p>
+      <p>Momarchy is currently aimed at a Finnish audience. Localization support might come later. No promises :D</p>
+      <div class="links">
+        <a href="https://github.com/timosaarinen/momarchy">GitHub</a>
+        <a href="https://github.com/timosaarinen/momarchy#readme">README</a>
+      </div>
+    </section>
+
+    <section lang="fi">
+      <h2>Omarchy — pikaohje</h2>
+      <p>Tämä yhden sivun suomenkielinen pikaohje syntyi Momarchyn sivutuotteena ja saattaa olla hyödyllinen muillekin Omarchy-käyttäjille.</p>
+      <p class="small">Klikkaa esikatselua avataksesi PDF:n. Pikanäppäimet voivat muuttua Omarchy-päivityksissä — tarkista tarvittaessa SUPER + K.</p>
+      <div class="pdf-preview">
+        <iframe
+          src="omarchy-pikaohje-a4.pdf#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0"
+          title="Omarchy — pikaohje PDF-esikatselu"
+          loading="lazy"
+        ></iframe>
+        <a href="omarchy-pikaohje-a4.pdf" aria-label="Avaa Omarchy-pikaohje PDF"></a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
