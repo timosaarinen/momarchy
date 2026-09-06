@@ -2,7 +2,7 @@
   <img src="docs/images/momarchy-logo.png" alt="Momarchy" width="100%">
 </p>
 
-Momarchy is a small open-source side project: make an old laptop simple enough that my mom can just use it.
+Momarchy is a small open-source side project built on [Omarchy](https://omarchy.org/): turn an old laptop into a simple Linux computer for an elderly or non-technical user. The current reference target is a **13-inch MacBook Pro from 2009**, with Momarchy Home written in **Rust + Ratatui**.
 
 **Very early development phase (6 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
 
