@@ -6,6 +6,8 @@ Momarchy is a small open-source side project: make an old laptop simple enough t
 
 **Very early development phase (6 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
 
+For plain Omarchy use, [Omarchy — pikaohje (A4 PDF)](docs/omarchy-pikaohje-a4.pdf) is a one-page Finnish cheat sheet for the main `SUPER` shortcuts, windows/workspaces, clipboard/screenshots, system controls and tmux basics.
+
 ## I don't want your crappy in-progress auto-load Momarchy Home, just tell me how to get standard Omarchy on my 2009 MacBook
 
 Plain [Omarchy](https://omarchy.org/) 4.0.2 works surprisingly well on the current reference machine, a **13-inch MacBook Pro from 2009** (Core 2 Duo P7350, 2 GB RAM, GeForce 9400M, Broadcom BCM4322 Wi-Fi). Props to DHH & Omarchy contributors.
