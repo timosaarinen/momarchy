@@ -62,6 +62,20 @@ if ((${#missing_packages[@]} > 0)); then
   sudo pacman -S --needed --noconfirm "${missing_packages[@]}"
 fi
 
+# Chromecast control is an appliance dependency, but catt lives in the AUR.
+# Provision it unattended just like the reference MacBook's AUR Wi-Fi firmware:
+# no clean-build/diff/edit menus and no package confirmation prompts.
+if ! command -v catt >/dev/null 2>&1; then
+  if ! command -v yay >/dev/null 2>&1; then
+    printf '%s\n' 'Chromecast support requires catt, but the AUR helper yay is unavailable.' >&2
+    printf '%s\n' 'Install catt from the AUR (Omarchy normally provides yay), then rerun `cargo provision`.' >&2
+    exit 1
+  fi
+
+  printf '%s\n' '==> installing Chromecast control (catt)'
+  yay -S --needed --noconfirm --answerclean None --answerdiff None --answeredit None catt
+fi
+
 write_if_changed() {
   local destination="$1"
   local temp
@@ -343,6 +357,7 @@ printf '%s\n' '==> Momarchy target provisioning complete'
 printf '    user: %s\n' "$TARGET_USER"
 printf '%s\n' '    Home: Omarchy autostart, live actions enabled'
 printf '%s\n' '    Home key: Super+M'
+printf '%s\n' '    Chromecast: catt installed'
 printf '%s\n' '    idle lock/screensaver: disabled (stay awake)'
 printf '%s\n' '    pre-sleep session lock: disabled; lid suspend unchanged'
 printf '%s\n' '    SDDM: appliance autologin configured'
