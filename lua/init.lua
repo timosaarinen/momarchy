@@ -36,7 +36,7 @@ return ui.app {
         "internet",
         "INTERNET",
         "Avaa selain",
-        ui.open("https://www.google.fi/", "Avataan internet.")
+        ui.browser("https://www.google.fi/", "Avataan selainta…")
       ),
 
       ui.button(
