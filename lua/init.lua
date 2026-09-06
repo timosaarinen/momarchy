@@ -64,11 +64,19 @@ return ui.app {
         "tv",
         "KATSO TELEVISIOSTA",
         "Chromecast",
-        ui.message "Chromecast-tuki tulee seuraavaksi."
+        ui.go "tv"
       ),
 
       ui.button("games", "PELIT", "Palikat, Mato...", ui.go "games"),
       ui.button("help", "APUA", "Jos jokin ei toimi", ui.go "help"),
+    },
+
+    -- The Rust Home runtime renders this screen as the dedicated Chromecast UI.
+    -- Keep one semantic button here so normalized config/automation remains valid.
+    tv = ui.screen {
+      ui.title "KATSO TELEVISIOSTA",
+      ui.subtitle "Liitä YouTube-linkki",
+      ui.button("back", "TAKAISIN", "Palaa alkuun", ui.go "home"),
     },
 
     games = ui.screen {
