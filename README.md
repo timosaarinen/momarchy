@@ -4,7 +4,7 @@
 
 Momarchy is a small open-source side project: make an old laptop simple enough that my mom can just use it.
 
-**Very early development phase (5 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
+**Very early development phase (6 days in).** The current Momarchy Home is an experiment, not a polished distro or installer.
 
 ## I don't want your crappy in-progress auto-load Momarchy Home, just tell me how to get standard Omarchy on my 2009 MacBook
 
@@ -95,7 +95,9 @@ For the current reference machine:
 cargo provision t@momarchy
 ```
 
-Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package or SDDM work is actually needed. The repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, no pre-sleep session lock while leaving lid suspend intact, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected.
+Provisioning is the operation allowed to make system/session changes and may ask for the target user's sudo password when privileged package, systemd policy or SDDM work is actually needed. The repo `install.sh` codifies the settings we proved manually: required tools, Omarchy Home autostart with live actions, `Super+M`, persistent stay-awake/no idle password lock, no pre-sleep session lock, **system suspend/hibernate disabled with lid-close ignored**, SDDM autologin, and the reference MacBook's hardware-specific NumLock/Broadcom fixes when that hardware is detected.
+
+The no-sleep policy is intentional rather than a workaround hidden in developer commands: the MBP13 showed intermittent resume failures, including one hard hang that required forced power-off. For now Momarchy behaves like an appliance that stays running until the user explicitly shuts it down. The underlying suspend archaeology is preserved in [docs/HARDWARE.md](docs/HARDWARE.md) for later rather than keeping it on the handoff-critical path.
 
 Provisioning is intentionally **fail-closed and non-destructive**. It only makes exact/owned changes, validates known state before mutation, backs up touched Hyprland files, validates the resulting config, rolls back introduced errors, and stops with an informative manual repair instruction when state is ambiguous. See [docs/PROVISIONING.md](docs/PROVISIONING.md) for the normative policy. After provisioning succeeds, the same command deploys the current Momarchy binary + repo Lua and runs the normal health checks.
 
@@ -270,14 +272,21 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - Previous-boot logs show several successful deep-S3 resumes, but also real `nouveau` GeForce 9400M faults around Quickshell and one `mac80211`/`cfg80211` resume allocation failure followed by `Hardware became unavailable upon resume`. The final failed cycle is more fundamental-looking: its journal stops at `PM: suspend entry (deep)` with no recorded lid-open/wake/`PM: suspend exit`, so root cause is still open rather than pinned on graphics or Wi-Fi
 - Promoted suspend/resume reliability to an appliance-critical investigation and wrote the evidence/next controlled isolation steps into [docs/HARDWARE.md](docs/HARDWARE.md): inspect available sleep modes/wake sources first, then try temporary `s2idle` if supported and a separate deep-suspend test with Wi-Fi disabled before changing persistent kernel settings or blaming Quickshell
 
+### 2026-09-06 — Day 6
+
+- Took the safer appliance route instead of spending more critical-path time on flaky 2009-MacBook suspend semantics: Momarchy should simply stay running until the user explicitly shuts it down
+- Made that policy structural in provisioning instead of another temporary developer inhibitor. Momarchy now writes its own systemd `sleep.conf.d` drop-in with suspend/hibernate/hybrid modes disabled and a `logind.conf.d` drop-in that ignores lid-close plus suspend/hibernate keys on battery or external power
+- Kept Omarchy's stay-awake mode and the masked `omarchy-sleep-lock.service` as complementary layers: no idle lock, no pre-sleep password gate, and now no normal system sleep path to trigger either resume bug in the first place
+- Preserved the deep-S3/`s2idle` evidence in `docs/HARDWARE.md` but removed suspend reliability from the handoff-critical path. If sleep ever becomes worth having later, investigate it as an optional feature rather than making mom beta-test old-NVIDIA/ACPI archaeology :D
+
 ## TODO
 
-- [ ] Make MBP13 lid suspend/resume boringly reliable before handoff: repeated ACPI S3/deep cycles are intermittent and one hard hang required forced power-off with no SSH or recorded wake; first inspect `/sys/power/mem_sleep` + `/proc/acpi/wakeup`, then isolate temporary `s2idle` if available and deep suspend with Wi-Fi disabled before persistent kernel/driver changes. See `docs/HARDWARE.md`.
 - [ ] Prove `cargo provision` from a genuinely fresh Omarchy 4.0.2 target (clean VM/machine/user) before treating the installer as handoff-ready; exercise both the normal first-run path and at least one fail-closed/rollback case rather than relying only on the already-hand-tuned MBP13.
 - [ ] Verify live inotify config reload and bad-edit recovery on the actual MBP13.
 - [ ] Launch external GUI/terminal apps as plain child processes; suspend/restore the Momarchy terminal around terminal apps and use a shell only when shell semantics are actually needed.
 - [ ] Make TUI terminal cleanup bulletproof on normal exit, errors, signals and panics; never leave raw mode / mouse tracking / alternate screen behind.
 - [ ] Make the Rust/Ratatui Momarchy Home actually mom-ready; tune layout, focus, wording and real actions, then do final sizing/geometry checks on the 13-inch target.
+- [ ] Add an explicit `Sammuta tietokone` Home action with a simple confirmation step; with sleep disabled by default, power-off should be obvious and intentional rather than hidden in normal Omarchy UI.
 - [ ] **Experiment:** prototype Quickshell as an optional graphical Momarchy Home frontend: keep Rust/Lua as the semantic model and action engine plus Ratatui as the boring fallback, first try a fullscreen Quickshell `FloatingWindow` talking to `momarchy home --automation` over a tiny JSON-lines IPC, and only if that proves simple/reliable on the real MBP13 evaluate integrating it into Omarchy's existing Quickshell shell as a Home/overlay plugin instead of coupling Rust directly to Qt.
 - [ ] Automation should support all useful stable semantic commands plus human-equivalent input, including optional `click x y` for hitbox testing.
 - [ ] Add an optional automation `render` command that dumps the whole virtual Ratatui frame from an in-memory backend when semantic state/actions are not enough.
@@ -287,12 +296,12 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 - [ ] `Pelit`: evaluate existing open-source terminal games first; integrate/fork only mom-worthy ones. Palikat + Mato are the first targets.
 - [ ] Grow `momarchy status` / `momarchy doctor` from real Linux tools and `/sys`, not a parallel monitoring stack.
 - [ ] Add a calm colored ASCII-art background through the global theme, likely a Finnish lake/forest scene framing the usable center; keep artwork separate from screen structure and avoid per-screen styling.
-- [ ] Add a hidden developer/admin control for temporary appliance policy overrides such as inhibiting lid-close sleep during remote work; keep it behind a developer hotkey/screen and out of the normal mom-facing menu.
 - [ ] Test audio, browser video and long-running stability on the MacBook.
 - [ ] Investigate MBP13 Wi-Fi reliability across different WLANs: BCM4322 + `b43` showed severe latency/packet loss on one crowded 2.4 GHz network, repeated `4WAY_HANDSHAKE_TIMEOUT` and `b43-phy0 ERROR: MAC suspend failed`; compare another AP/hotspot and 5 GHz first; if it remains slow/flaky, A/B test the supported proprietary `broadcom-wl` driver against the current `b43` baseline rather than piling on unrelated blacklist tweaks.
 - [ ] Make `cargo deploy` restart Home safely after Rust updates **only if Home was already running**; if the user had closed Home, leave it closed. Lua/config changes already hot-reload in place.
+- [ ] Revisit MBP13 suspend/resume only if there is a real reason to bring sleep back; keep it optional and use the captured deep-S3/`s2idle`, `nouveau` and Wi-Fi-resume evidence in `docs/HARDWARE.md` instead of rediscovering the failure modes.
 - [ ] Keep Q4OS Trinity / other lean GUI Linux as fallback if Omarchy eventually becomes too much for 2 GB.
-- [ ] **Lowest priority:** investigate the broken-looking Omarchy password/lock screen after MBP13 suspend/resume: nearly black/dim display with a tiny/pixel-mess-looking center UI, keypresses briefly wake it, but typing the password still unlocks and the normal Omarchy desktop graphics are fine. Momarchy now disables the pre-sleep session lock, so this screen should not normally appear; only chase it later if it still matters.
+- [ ] **Lowest priority:** investigate the broken-looking Omarchy password/lock screen seen during earlier suspend/resume tests only if sleep is ever re-enabled; the current appliance policy disables sleep and keeps the pre-sleep lock masked, so this screen should not appear in normal use.
 
 ## Guidelines
 
