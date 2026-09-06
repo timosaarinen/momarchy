@@ -41,6 +41,14 @@ function ui.open(target, live_message)
   }
 end
 
+function ui.browser(target, live_message)
+  return {
+    command = { "__momarchy_browser__", target },
+    kind = "browser",
+    live_message = live_message or "Avataan selainta…",
+  }
+end
+
 function ui.run(command, kind, live_message)
   return {
     command = command,

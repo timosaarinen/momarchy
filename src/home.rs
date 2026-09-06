@@ -26,6 +26,7 @@ use crate::{
 
 const MENU_MAX_WIDTH: u16 = 64;
 const BUTTON_HEIGHT: u16 = 4;
+const BROWSER_ACTION_PROGRAM: &str = "__momarchy_browser__";
 
 #[derive(Clone, Copy, Default)]
 pub struct Options {
@@ -69,6 +70,7 @@ enum RuntimeEvent {
     TerminalFailed(String),
     ConfigChanged,
     WatchFailed,
+    BrowserFinished(Result<(), String>),
 }
 
 struct App {
@@ -79,6 +81,8 @@ struct App {
     status: String,
     exit: bool,
     live_actions: bool,
+    runtime_sender: Option<Sender<RuntimeEvent>>,
+    browser_busy: Option<String>,
 }
 
 impl App {
@@ -98,11 +102,14 @@ impl App {
             status,
             exit: false,
             live_actions,
+            runtime_sender: None,
+            browser_busy: None,
         }
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal, config_path: &Path) -> io::Result<()> {
         let (sender, receiver) = mpsc::channel();
+        self.runtime_sender = Some(sender.clone());
         spawn_terminal_reader(sender.clone())?;
 
         let config_dir = config_path
@@ -132,6 +139,7 @@ impl App {
                 Ok(RuntimeEvent::WatchFailed) => {
                     self.status = "Asetusten automaattinen päivitys ei toimi.".to_owned();
                 }
+                Ok(RuntimeEvent::BrowserFinished(result)) => self.finish_browser(result),
                 Err(_) => return Err(io::Error::other("Momarchy event sources stopped")),
             }
         }
@@ -143,6 +151,12 @@ impl App {
         let theme = self.config.theme.clone();
         let frame_area = frame.area();
         frame.render_widget(Block::default().style(base_style(&theme)), frame_area);
+
+        if let Some(message) = self.browser_busy.as_deref() {
+            self.button_areas.clear();
+            render_busy(frame, frame_area, &theme, message);
+            return;
+        }
 
         let area = inset(frame_area, theme.layout.margin);
         let areas = Layout::default()
@@ -263,6 +277,16 @@ impl App {
     }
 
     fn handle_event(&mut self, event: Event) -> io::Result<()> {
+        if self.browser_busy.is_some() {
+            if let Event::Key(key) = event
+                && key.kind == KeyEventKind::Press
+                && matches!(key.code, KeyCode::Esc | KeyCode::Char('q'))
+            {
+                self.exit = true;
+            }
+            return Ok(());
+        }
+
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Esc => self.back_or_exit(),
@@ -356,7 +380,14 @@ impl App {
                 args,
                 live_message,
             } => {
-                if self.live_actions {
+                if program == BROWSER_ACTION_PROGRAM {
+                    let [target] = args.as_slice() else {
+                        return Err(io::Error::other(
+                            "internal browser action expects exactly one URL",
+                        ));
+                    };
+                    self.activate_browser(target.clone(), live_message)?;
+                } else if self.live_actions {
                     Command::new(&program).args(&args).spawn()?;
                     self.status = live_message;
                 } else {
@@ -366,6 +397,42 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn activate_browser(&mut self, target: String, live_message: String) -> io::Result<()> {
+        if !self.live_actions {
+            self.status = format!("DEVELOPMENT MODE — browser: {target}");
+            return Ok(());
+        }
+
+        let Some(sender) = self.runtime_sender.clone() else {
+            crate::browser::focus_or_open(&target)?;
+            self.status = "Selain on valmis.".to_owned();
+            return Ok(());
+        };
+
+        let browser_sender = sender.clone();
+        std::thread::Builder::new()
+            .name("momarchy-browser-open".to_owned())
+            .stack_size(256 * 1024)
+            .spawn(move || {
+                let result = crate::browser::focus_or_open(&target).map_err(|error| error.to_string());
+                let _ = browser_sender.send(RuntimeEvent::BrowserFinished(result));
+            })?;
+
+        self.browser_busy = Some(live_message);
+        Ok(())
+    }
+
+    fn finish_browser(&mut self, result: Result<(), String>) {
+        self.browser_busy = None;
+        match result {
+            Ok(()) => self.status = "Selain on valmis.".to_owned(),
+            Err(error) => {
+                eprintln!("momarchy: browser launch failed: {error}");
+                self.status = "Selainta ei saatu auki. Yritä uudelleen.".to_owned();
+            }
+        }
     }
 
     fn select_id(&mut self, id: &str) -> bool {
@@ -507,6 +574,21 @@ fn run_automation(app: &mut App, config_path: &Path) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn render_busy(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Length(5),
+            Constraint::Percentage(40),
+        ])
+        .split(area);
+    let message = Paragraph::new(format!("{message}\n\nOdota hetki."))
+        .alignment(Alignment::Center)
+        .style(base_style(theme).add_modifier(Modifier::BOLD));
+    frame.render_widget(message, rows[1]);
 }
 
 fn base_style(theme: &Theme) -> Style {
