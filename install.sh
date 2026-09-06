@@ -91,6 +91,59 @@ write_if_changed() {
   fi
 }
 
+ROOT_CONFIG_CHANGED=0
+install_root_config_if_changed() {
+  local destination="$1"
+  local description="$2"
+  local temp
+  temp="$(mktemp)"
+  cat >"$temp"
+
+  if [[ -L "$destination" ]] || [[ -e "$destination" && ! -f "$destination" ]]; then
+    rm -f "$temp"
+    printf 'Expected Momarchy-owned config path %s to be a regular file or absent.\n' "$destination" >&2
+    printf '%s\n' 'Refusing to replace an unexpected file type; inspect the path manually, then rerun `cargo provision`.' >&2
+    return 1
+  fi
+
+  if [[ -f "$destination" ]] && cmp -s "$temp" "$destination"; then
+    rm -f "$temp"
+    return 0
+  fi
+
+  printf '==> configuring %s (sudo may prompt)\n' "$description"
+  sudo install -Dm644 -o root -g root "$temp" "$destination"
+  rm -f "$temp"
+  ROOT_CONFIG_CHANGED=1
+}
+
+systemd_config_value() {
+  local config="$1"
+  local key="$2"
+
+  systemd-analyze cat-config "$config" | awk -F= -v key="$key" '
+    $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+      value=$2
+      gsub(/[[:space:]]/, "", value)
+    }
+    END { print value }
+  '
+}
+
+require_systemd_config_value() {
+  local config="$1"
+  local key="$2"
+  local expected="$3"
+  local actual
+  actual="$(systemd_config_value "$config" "$key")"
+
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'Expected effective %s setting %s=%s, got %s.\n' "$config" "$key" "$expected" "${actual:-<unset>}" >&2
+    printf 'Inspect merged configuration with: systemd-analyze cat-config %s\n' "$config" >&2
+    return 1
+  fi
+}
+
 ensure_line() {
   local file="$1"
   local line="$2"
@@ -295,10 +348,49 @@ if ! omarchy toggle idle status 2>/dev/null | grep -q '"enabled":true'; then
   omarchy toggle idle stay-awake
 fi
 
-# Omarchy separately locks the graphical session before logind suspends or
-# hibernates. Momarchy's appliance account intentionally has no password gates,
-# so disable only that user-level pre-sleep lock monitor. Do not change logind's
-# lid-switch or suspend policy: closing the lid must still suspend the machine.
+# Momarchy is an appliance, and the reference MBP13 has proven that suspend is
+# not boringly reliable enough to be a default. Disable every normal systemd
+# sleep/hibernate mode and explicitly ignore lid/sleep/hibernate switch events.
+# Shutdown/reboot remain available; power-off should be an explicit user action.
+install_root_config_if_changed /etc/systemd/sleep.conf.d/99-momarchy-no-sleep.conf 'system sleep/hibernate policy' <<'EOF'
+# Managed by Momarchy install.sh.
+[Sleep]
+AllowSuspend=no
+AllowHibernation=no
+AllowHybridSleep=no
+AllowSuspendThenHibernate=no
+EOF
+
+install_root_config_if_changed /etc/systemd/logind.conf.d/99-momarchy-no-sleep.conf 'lid and sleep-key policy' <<'EOF'
+# Managed by Momarchy install.sh.
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+HandleSuspendKey=ignore
+HandleSuspendKeyLongPress=ignore
+HandleHibernateKey=ignore
+HandleHibernateKeyLongPress=ignore
+IdleAction=ignore
+EOF
+
+for key in AllowSuspend AllowHibernation AllowHybridSleep AllowSuspendThenHibernate; do
+  require_systemd_config_value systemd/sleep.conf "$key" no
+done
+for key in HandleLidSwitch HandleLidSwitchExternalPower HandleLidSwitchDocked \
+  HandleSuspendKey HandleSuspendKeyLongPress HandleHibernateKey HandleHibernateKeyLongPress IdleAction; do
+  require_systemd_config_value systemd/logind.conf "$key" ignore
+done
+
+if ((ROOT_CONFIG_CHANGED)); then
+  printf '%s\n' '==> reloading systemd-logind no-sleep policy'
+  sudo systemctl reload systemd-logind.service
+fi
+
+# Omarchy separately locks the graphical session before a sleep request. Keep
+# that monitor masked as defense in depth: appliance user t should never see a
+# password gate even if some future component attempts a sleep operation that
+# systemd then refuses.
 SLEEP_LOCK_SERVICE="omarchy-sleep-lock.service"
 if ! systemctl --user list-unit-files "$SLEEP_LOCK_SERVICE" --no-legend 2>/dev/null \
   | grep -q "^${SLEEP_LOCK_SERVICE}[[:space:]]"; then
@@ -306,7 +398,7 @@ if ! systemctl --user list-unit-files "$SLEEP_LOCK_SERVICE" --no-legend 2>/dev/n
   printf '%s\n' 'Refusing to guess at a replacement service; inspect the installed Omarchy sleep/lock units, then update Momarchy provisioning explicitly.' >&2
   exit 1
 fi
-printf '%s\n' '==> disabling pre-sleep session lock; lid suspend remains enabled'
+printf '%s\n' '==> disabling pre-sleep session lock'
 systemctl --user mask --now "$SLEEP_LOCK_SERVICE"
 
 sddm_has_setting() {
@@ -359,6 +451,7 @@ printf '%s\n' '    Home: Omarchy autostart, live actions enabled'
 printf '%s\n' '    Home key: Super+M'
 printf '%s\n' '    Chromecast: catt installed'
 printf '%s\n' '    idle lock/screensaver: disabled (stay awake)'
-printf '%s\n' '    pre-sleep session lock: disabled; lid suspend unchanged'
+printf '%s\n' '    system sleep/hibernate: disabled; lid close ignored'
+printf '%s\n' '    pre-sleep session lock: disabled'
 printf '%s\n' '    SDDM: appliance autologin configured'
 printf '%s\n' 'A reboot is recommended after first-time provisioning to prove boot -> Home.'
