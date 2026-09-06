@@ -1,6 +1,6 @@
 # Development
 
-Momarchy is intentionally small. The deployment target is an appliance, not a development workstation.
+Momarchy is a tiny open-source [Omarchy](https://omarchy.org/)/Linux project for making an old laptop simple enough for a non-technical elderly person to use. It is intentionally small: the deployment target is an appliance, not a development workstation.
 
 ## Current shape
 
