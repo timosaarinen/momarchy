@@ -11,6 +11,7 @@ Observed under Omarchy:
 - Memory: 2 GB
 - GPU/chipset: NVIDIA C79 / GeForce 9400M G
 - Linux graphics driver: `nouveau`
+- Display: 1280×800 native panel (16:10)
 - Wi-Fi: Broadcom BCM4322 802.11a/b/g/n, working with Linux `b43` + `b43-firmware`
 - Storage: ~112 GB Hitachi SATA disk
 - Omarchy partition: ~50 GB carved out beside the existing macOS installation
@@ -25,6 +26,12 @@ Observed under Omarchy:
 - Reported design capacity: 5,020,000 (~95.5% remaining)
 
 The GeForce 9400M-era NVIDIA chipset also provides a large part of the platform I/O (memory controller, SATA, USB, audio, PCI, etc.), so `lspci` contains a lot more NVIDIA than just the display controller.
+
+### Wallpaper target
+
+The reference MBP13 panel is exactly 1280×800 / 16:10, which makes **320×200** a convenient retro/pixel-art authoring resolution: it scales to the native panel at an exact 4× in both dimensions. **320×240 is 4:3 and does not match the panel**; a crop-to-fill background would have to crop the top and bottom.
+
+For the planned low-key Momarchy Finnish-lake wallpaper, prefer authoring/editing at 320×200. Letting the desktop scale that small source is fine when a little softness is acceptable. If exact hard pixel edges are wanted later, nearest-neighbor upscale the finished 320×200 image to 1280×800 before deployment instead of relying on the background renderer's scaling.
 
 ### Installation notes
 
