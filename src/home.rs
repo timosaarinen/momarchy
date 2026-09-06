@@ -7,8 +7,8 @@ use std::{
 
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
-        MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind,
     },
     execute,
 };
@@ -21,6 +21,7 @@ use ratatui::{
 
 use crate::{
     config::{self, Action, Button, Config, Theme, ThemeBorder, ThemeColor},
+    tv::{self, Intent as TvIntent, TvCommand},
     watch::{self, WatchEvent},
 };
 
@@ -54,14 +55,14 @@ struct MouseCaptureGuard;
 
 impl MouseCaptureGuard {
     fn enable() -> io::Result<Self> {
-        execute!(stdout(), EnableMouseCapture)?;
+        execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
         Ok(Self)
     }
 }
 
 impl Drop for MouseCaptureGuard {
     fn drop(&mut self) {
-        let _ = execute!(stdout(), DisableMouseCapture);
+        let _ = execute!(stdout(), DisableBracketedPaste, DisableMouseCapture);
     }
 }
 
@@ -71,6 +72,7 @@ enum RuntimeEvent {
     ConfigChanged,
     WatchFailed,
     BrowserFinished(Result<(), String>),
+    TvFinished(tv::Outcome),
 }
 
 struct App {
@@ -83,6 +85,7 @@ struct App {
     live_actions: bool,
     runtime_sender: Option<Sender<RuntimeEvent>>,
     browser_busy: Option<String>,
+    television: tv::State,
 }
 
 impl App {
@@ -104,6 +107,7 @@ impl App {
             live_actions,
             runtime_sender: None,
             browser_busy: None,
+            television: tv::State::default(),
         }
     }
 
@@ -140,6 +144,7 @@ impl App {
                     self.status = "Asetusten automaattinen päivitys ei toimi.".to_owned();
                 }
                 Ok(RuntimeEvent::BrowserFinished(result)) => self.finish_browser(result),
+                Ok(RuntimeEvent::TvFinished(outcome)) => self.television.finish(outcome),
                 Err(_) => return Err(io::Error::other("Momarchy event sources stopped")),
             }
         }
@@ -155,6 +160,13 @@ impl App {
         if let Some(message) = self.browser_busy.as_deref() {
             self.button_areas.clear();
             render_busy(frame, frame_area, &theme, message);
+            return;
+        }
+
+        if self.screen == "tv" {
+            self.button_areas.clear();
+            self.television
+                .render(frame, frame_area, &theme, self.live_actions);
             return;
         }
 
@@ -287,6 +299,10 @@ impl App {
             return Ok(());
         }
 
+        if self.screen == "tv" {
+            return self.handle_tv_event(event);
+        }
+
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Esc => self.back_or_exit(),
@@ -311,6 +327,18 @@ impl App {
                 }
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_tv_event(&mut self, event: Event) -> io::Result<()> {
+        match self.television.handle_event(event) {
+            TvIntent::None => {}
+            TvIntent::Back => {
+                let home = self.config.home.clone();
+                self.go_to(home);
+            }
+            TvIntent::Run(command) => self.activate_tv(command)?,
         }
         Ok(())
     }
@@ -355,6 +383,9 @@ impl App {
     fn go_to(&mut self, screen: String) {
         self.screen = screen;
         self.selected = 0;
+        if self.screen == "tv" {
+            self.television.reset();
+        }
         self.status = self.current_screen().subtitle.clone();
     }
 
@@ -421,6 +452,29 @@ impl App {
             })?;
 
         self.browser_busy = Some(live_message);
+        Ok(())
+    }
+
+    fn activate_tv(&mut self, command: TvCommand) -> io::Result<()> {
+        if !self.live_actions {
+            self.television.finish_dry_run(command);
+            return Ok(());
+        }
+
+        let Some(sender) = self.runtime_sender.clone() else {
+            let outcome = tv::execute(command);
+            self.television.finish(outcome);
+            return Ok(());
+        };
+
+        self.television.begin(&command);
+        std::thread::Builder::new()
+            .name("momarchy-chromecast".to_owned())
+            .stack_size(256 * 1024)
+            .spawn(move || {
+                let outcome = tv::execute(command);
+                let _ = sender.send(RuntimeEvent::TvFinished(outcome));
+            })?;
         Ok(())
     }
 
