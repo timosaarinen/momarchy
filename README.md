@@ -305,6 +305,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the current KISS development/
 
 ## Guidelines
 
+Aim for **Works By Default(tm)**: prefer defaults that make the appliance behave correctly without temporary commands, hidden setup, or remembering special procedures.
+
 Keep normal 2 GB operation out of swap; measure first, optimize only what matters.
 
 For host/desktop operations, prefer an Omarchy-provided primitive first, then an ordinary Arch/Linux primitive, and only write custom Momarchy machinery when neither already fits — especially around Hyprland/Wayland.
