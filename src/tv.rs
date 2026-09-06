@@ -398,27 +398,26 @@ pub fn execute(command: TvCommand) -> Outcome {
 
 fn run_catt_with_retry(args: &[String]) -> Result<(), String> {
     let started = Instant::now();
-    let mut last_error = "tuntematon virhe".to_owned();
 
     loop {
-        match ProcessCommand::new("catt").args(args).output() {
+        let last_error = match ProcessCommand::new("catt").args(args).output() {
             Ok(output) if output.status.success() => return Ok(()),
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
                 let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                last_error = if !stderr.is_empty() {
+                if !stderr.is_empty() {
                     stderr
                 } else if !stdout.is_empty() {
                     stdout
                 } else {
                     format!("catt exited with {}", output.status)
-                };
+                }
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Err("catt-ohjelmaa ei löydy; suorita Momarchy provisioning".to_owned());
             }
-            Err(error) => last_error = error.to_string(),
-        }
+            Err(error) => error.to_string(),
+        };
 
         if started.elapsed() >= RETRY_WINDOW {
             return Err(format!(
