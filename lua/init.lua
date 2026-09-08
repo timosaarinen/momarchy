@@ -87,9 +87,9 @@ return ui.app {
         "palikat",
         "PALIKAT",
         "Putoavia palikoita",
-        ui.message "Palikat tulee pian :)"
+        ui.game "palikat"
       ),
-      ui.button("mato", "MATO", "Syö ja kasva", ui.message "Mato tulee pian :)"),
+      ui.button("mato", "MATO", "Syö ja kasva", ui.game "mato"),
       ui.button("back", "TAKAISIN", "Palaa alkuun", ui.go "home"),
     },
 

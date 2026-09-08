@@ -49,6 +49,14 @@ function ui.browser(target, live_message)
   }
 end
 
+function ui.game(id)
+  return {
+    command = { "__momarchy_game__", id },
+    kind = "internal",
+    live_message = "",
+  }
+end
+
 function ui.run(command, kind, live_message)
   return {
     command = command,

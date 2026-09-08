@@ -1,5 +1,6 @@
 mod browser;
 mod config;
+mod games;
 mod home;
 mod status;
 mod tv;

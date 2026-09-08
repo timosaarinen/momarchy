@@ -2,7 +2,7 @@ use std::{
     io::{self, BufRead, Write, stdout},
     path::Path,
     process::Command,
-    sync::mpsc::{self, Sender},
+    sync::mpsc::{self, RecvTimeoutError, Sender},
 };
 
 use crossterm::{
@@ -21,6 +21,7 @@ use ratatui::{
 
 use crate::{
     config::{self, Action, Button, Config, Theme, ThemeBorder, ThemeColor},
+    games::{self, Intent as GameIntent, Styles as GameStyles},
     tv::{self, Intent as TvIntent, TvCommand},
     watch::{self, WatchEvent},
 };
@@ -28,6 +29,7 @@ use crate::{
 const MENU_MAX_WIDTH: u16 = 64;
 const BUTTON_HEIGHT: u16 = 4;
 const BROWSER_ACTION_PROGRAM: &str = "__momarchy_browser__";
+const GAME_ACTION_PROGRAM: &str = "__momarchy_game__";
 
 #[derive(Clone, Copy, Default)]
 pub struct Options {
@@ -86,6 +88,7 @@ struct App {
     runtime_sender: Option<Sender<RuntimeEvent>>,
     browser_busy: Option<String>,
     television: tv::State,
+    games: games::State,
 }
 
 impl App {
@@ -108,6 +111,7 @@ impl App {
             runtime_sender: None,
             browser_busy: None,
             television: tv::State::default(),
+            games: games::State::default(),
         }
     }
 
@@ -134,18 +138,40 @@ impl App {
         while !self.exit {
             terminal.draw(|frame| self.render(frame))?;
 
-            match receiver.recv() {
-                Ok(RuntimeEvent::Terminal(event)) => self.handle_event(event)?,
-                Ok(RuntimeEvent::TerminalFailed(error)) => {
+            let runtime_event = if let Some(delay) = self.games.tick_delay() {
+                match receiver.recv_timeout(delay) {
+                    Ok(event) => Some(event),
+                    Err(RecvTimeoutError::Timeout) => {
+                        self.games.tick();
+                        None
+                    }
+                    Err(RecvTimeoutError::Disconnected) => {
+                        return Err(io::Error::other("Momarchy event sources stopped"));
+                    }
+                }
+            } else {
+                Some(
+                    receiver
+                        .recv()
+                        .map_err(|_| io::Error::other("Momarchy event sources stopped"))?,
+                )
+            };
+
+            let Some(runtime_event) = runtime_event else {
+                continue;
+            };
+
+            match runtime_event {
+                RuntimeEvent::Terminal(event) => self.handle_event(event)?,
+                RuntimeEvent::TerminalFailed(error) => {
                     return Err(io::Error::other(format!("terminal input failed: {error}")));
                 }
-                Ok(RuntimeEvent::ConfigChanged) => self.reload_config(config_path),
-                Ok(RuntimeEvent::WatchFailed) => {
+                RuntimeEvent::ConfigChanged => self.reload_config(config_path),
+                RuntimeEvent::WatchFailed => {
                     self.status = "Asetusten automaattinen päivitys ei toimi.".to_owned();
                 }
-                Ok(RuntimeEvent::BrowserFinished(result)) => self.finish_browser(result),
-                Ok(RuntimeEvent::TvFinished(outcome)) => self.television.finish(outcome),
-                Err(_) => return Err(io::Error::other("Momarchy event sources stopped")),
+                RuntimeEvent::BrowserFinished(result) => self.finish_browser(result),
+                RuntimeEvent::TvFinished(outcome) => self.television.finish(outcome),
             }
         }
 
@@ -160,6 +186,20 @@ impl App {
         if let Some(message) = self.browser_busy.as_deref() {
             self.button_areas.clear();
             render_busy(frame, frame_area, &theme, message);
+            return;
+        }
+
+        if self.games.is_active() {
+            self.button_areas.clear();
+            self.games.render(
+                frame,
+                frame_area,
+                GameStyles {
+                    base: base_style(&theme),
+                    muted: muted_style(&theme),
+                    accent: selected_style(&theme),
+                },
+            );
             return;
         }
 
@@ -299,6 +339,13 @@ impl App {
             return Ok(());
         }
 
+        if self.games.is_active() {
+            if self.games.handle_event(event) == GameIntent::Back {
+                self.finish_game();
+            }
+            return Ok(());
+        }
+
         if self.screen == "tv" {
             return self.handle_tv_event(event);
         }
@@ -381,6 +428,9 @@ impl App {
     }
 
     fn go_to(&mut self, screen: String) {
+        if screen != "games" {
+            self.games.stop();
+        }
         self.screen = screen;
         self.selected = 0;
         if self.screen == "tv" {
@@ -418,6 +468,14 @@ impl App {
                         ));
                     };
                     self.activate_browser(target.clone(), live_message)?;
+                } else if program == GAME_ACTION_PROGRAM {
+                    let [game] = args.as_slice() else {
+                        return Err(io::Error::other(
+                            "internal game action expects exactly one game id",
+                        ));
+                    };
+                    self.games.start(game).map_err(io::Error::other)?;
+                    self.status = format!("Peli käynnissä: {game}");
                 } else if self.live_actions {
                     Command::new(&program).args(&args).spawn()?;
                     self.status = live_message;
@@ -489,6 +547,11 @@ impl App {
         }
     }
 
+    fn finish_game(&mut self) {
+        self.games.stop();
+        self.status = "Valitse peli.".to_owned();
+    }
+
     fn select_id(&mut self, id: &str) -> bool {
         if let Some(index) = self.buttons().iter().position(|button| button.id == id) {
             self.selected = index;
@@ -499,6 +562,13 @@ impl App {
     }
 
     fn automation_key(&mut self, key: &str) -> io::Result<()> {
+        if self.games.is_active() {
+            if self.games.handle_named_key(key) == GameIntent::Back {
+                self.finish_game();
+            }
+            return Ok(());
+        }
+
         match key {
             "left" => self.move_left(),
             "right" => self.move_right(),
@@ -526,6 +596,9 @@ impl App {
                     config.home.clone()
                 };
 
+                if self.games.is_active() && screen != "games" {
+                    self.games.stop();
+                }
                 self.config = config;
                 self.screen = screen;
                 self.selected = selected_id
@@ -550,6 +623,9 @@ impl App {
             "MODE {}",
             if self.live_actions { "live" } else { "dry-run" }
         )?;
+        if let Some(game) = self.games.active_name() {
+            writeln!(out, "GAME {game}")?;
+        }
         writeln!(out, "SELECTED {}", self.buttons()[self.selected].id)?;
         writeln!(out, "ACTIONS")?;
         for button in self.buttons() {
@@ -611,6 +687,8 @@ fn run_automation(app: &mut App, config_path: &Path) -> io::Result<()> {
         } else if command == "snapshot" || command == "render" {
             // The semantic snapshot is the first automation surface. A full Ratatui
             // frame dump can be added later without changing the command stream.
+        } else if command == "tick" {
+            app.games.tick();
         } else if let Some(id) = command.strip_prefix("select ") {
             if !app.select_id(id.trim()) {
                 app.status = format!("Tuntematon valinta: {}", id.trim());
