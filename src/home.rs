@@ -368,14 +368,14 @@ impl App {
 
     fn handle_event(&mut self, event: Event) -> io::Result<()> {
         if self.remote_notice.is_some() {
-            if matches!(
-                event,
-                Event::Key(key) if key.kind == KeyEventKind::Press
-            ) || matches!(
-                event,
-                Event::Mouse(mouse) if matches!(mouse.kind, MouseEventKind::Down(_))
-            ) {
-                self.remote_notice = None;
+            match event {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    self.remote_notice = None;
+                }
+                Event::Mouse(mouse) if matches!(mouse.kind, MouseEventKind::Down(_)) => {
+                    self.remote_notice = None;
+                }
+                _ => {}
             }
             return Ok(());
         }
