@@ -19,6 +19,19 @@ const MATO_HEIGHT: i16 = 16;
 const SIDEBAR_WIDTH: u16 = 16;
 const GAME_GAP: u16 = 2;
 
+// Original Game Boy Tetris (World v1.1) gravity table. The hardware refreshes
+// at about 59.73 Hz, and the ROM stores these speeds as frames per row.
+const GAME_BOY_FRAME_MICROS: u64 = 16_742;
+const GAME_BOY_GRAVITY_FRAMES: [u64; 21] = [
+    53, 49, 45, 41, 37, 33, 28, 22, 17, 11, 10, 9, 8, 7, 6, 6, 5, 5, 4, 4, 3,
+];
+
+// Game Boy piece IDs used by the original randomizer:
+// 000=L, 001=J, 010=I, 011=O, 100=Z, 101=S, 110=T.
+// Palikat's internal order is I, O, T, S, Z, J, L.
+const PALIKAT_TO_GAME_BOY_KIND: [u8; 7] = [2, 3, 6, 5, 4, 1, 0];
+const GAME_BOY_TO_PALIKAT_KIND: [usize; 7] = [6, 5, 0, 1, 4, 3, 2];
+
 #[derive(Clone, Copy)]
 pub struct Styles {
     pub base: Style,
@@ -185,12 +198,12 @@ impl Palikat {
     fn new(seed: u64) -> Self {
         let mut rng = TinyRng::new(seed);
         let current = Piece {
-            kind: rng.index(7),
+            kind: game_boy_roll_piece(&mut rng),
             rotation: 0,
             x: 3,
             y: 0,
         };
-        let next = rng.index(7);
+        let next = game_boy_roll_piece(&mut rng);
         Self {
             board: [[false; PALIKAT_WIDTH]; PALIKAT_HEIGHT],
             current,
@@ -208,13 +221,16 @@ impl Palikat {
         *self = Self::new(seed);
     }
 
+    fn level(&self) -> usize {
+        (self.lines / 10).min(20) as usize
+    }
+
     fn tick_delay(&self) -> Option<Duration> {
         if self.paused || self.game_over {
             return None;
         }
-        let level = self.lines / 10;
-        let millis = 650u64.saturating_sub(u64::from(level) * 45).max(150);
-        Some(Duration::from_millis(millis))
+        let frames = GAME_BOY_GRAVITY_FRAMES[self.level()];
+        Some(Duration::from_micros(frames * GAME_BOY_FRAME_MICROS))
     }
 
     fn tick(&mut self) {
@@ -332,13 +348,16 @@ impl Palikat {
             _ => 0,
         });
 
+        let locking_kind = self.current.kind;
+        let preview_kind = self.next;
+        let following_kind = game_boy_next_piece(&mut self.rng, locking_kind, preview_kind);
         self.current = Piece {
-            kind: self.next,
+            kind: preview_kind,
             rotation: 0,
             x: 3,
             y: 0,
         };
-        self.next = self.rng.index(7);
+        self.next = following_kind;
         if !self.fits(self.current) {
             self.game_over = true;
         }
@@ -430,7 +449,7 @@ impl Palikat {
     fn render_sidebar(&self, frame: &mut Frame, area: Rect, styles: Styles) {
         render_text_row(frame, Rect::new(area.x, area.y, area.width, 1), "PALIKAT", styles.accent.add_modifier(Modifier::BOLD));
         render_stat(frame, area, 2, "PISTEET", self.score.to_string(), styles);
-        render_stat(frame, area, 6, "TASO", (self.lines / 10 + 1).to_string(), styles);
+        render_stat(frame, area, 6, "TASO", self.level().to_string(), styles);
         render_stat(frame, area, 10, "RIVIT", self.lines.to_string(), styles);
 
         let next_label = Rect::new(area.x, area.y + 14, area.width, 1);
@@ -453,6 +472,36 @@ impl Palikat {
             frame.render_widget(widget, state_area);
         }
     }
+}
+
+fn game_boy_kind(kind: usize) -> u8 {
+    PALIKAT_TO_GAME_BOY_KIND[kind]
+}
+
+fn game_boy_roll_piece(rng: &mut TinyRng) -> usize {
+    // The original ROM samples the Game Boy DIV register, then repeatedly adds
+    // four and wraps at 0x1c. In piece-number terms this is (DIV - 1) mod 7.
+    // Use an 8-bit PRNG sample as Palikat's stand-in for the hardware register.
+    let divider = rng.next_byte();
+    let gb_kind = divider.wrapping_sub(1) % 7;
+    GAME_BOY_TO_PALIKAT_KIND[gb_kind as usize]
+}
+
+fn game_boy_next_piece(rng: &mut TinyRng, locking_kind: usize, preview_kind: usize) -> usize {
+    let locking = game_boy_kind(locking_kind);
+    let preview = game_boy_kind(preview_kind);
+
+    // Mirrors the World v1.1 ROM randomizer at 0x2041: the first two rolls use
+    // the bitwise-OR rejection test and the third roll is always accepted.
+    for attempt in 0..3 {
+        let candidate = game_boy_roll_piece(rng);
+        let candidate_code = game_boy_kind(candidate);
+        if attempt == 2 || (locking | preview | candidate_code) != locking {
+            return candidate;
+        }
+    }
+
+    unreachable!("Game Boy randomizer always accepts its third roll")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -711,6 +760,10 @@ impl TinyRng {
         x
     }
 
+    fn next_byte(&mut self) -> u8 {
+        (self.next_u64() >> 56) as u8
+    }
+
     fn index(&mut self, upper: usize) -> usize {
         (self.next_u64() % upper as u64) as usize
     }
@@ -881,6 +934,21 @@ mod tests {
             y: 0,
         };
         assert!(!game.try_move(-1, 0));
+    }
+
+    #[test]
+    fn palikat_uses_game_boy_level_zero_gravity() {
+        let game = Palikat::new(1);
+        assert_eq!(
+            game.tick_delay(),
+            Some(Duration::from_micros(53 * GAME_BOY_FRAME_MICROS))
+        );
+    }
+
+    #[test]
+    fn palikat_game_boy_piece_ids_match_rom_order() {
+        assert_eq!(PALIKAT_TO_GAME_BOY_KIND, [2, 3, 6, 5, 4, 1, 0]);
+        assert_eq!(GAME_BOY_TO_PALIKAT_KIND, [6, 5, 0, 1, 4, 3, 2]);
     }
 
     #[test]
