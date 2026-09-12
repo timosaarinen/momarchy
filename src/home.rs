@@ -17,19 +17,20 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, Paragraph, Wrap},
 };
 
 use crate::{
-    config::{self, Action, Button, Config, Theme, ThemeBorder, ThemeColor},
+    config::{self, Action, Button, Config, Theme, ThemeColor},
     games::{self, Intent as GameIntent, Styles as GameStyles},
     ipc,
     tv::{self, Intent as TvIntent, TvCommand},
     watch::{self, WatchEvent},
 };
 
-const MENU_MAX_WIDTH: u16 = 64;
-const BUTTON_HEIGHT: u16 = 4;
+const MENU_MAX_WIDTH: u16 = 48;
+const BUTTON_HEIGHT: u16 = 1;
+const MENU_HINT_HEIGHT: u16 = 3;
 const BROWSER_ACTION_PROGRAM: &str = "__momarchy_browser__";
 const GAME_ACTION_PROGRAM: &str = "__momarchy_game__";
 
@@ -101,7 +102,7 @@ impl App {
         let status = if used_embedded_fallback {
             "Asetuksissa on virhe. Käytetään turvallisia oletusasetuksia.".to_owned()
         } else {
-            "Valitse hiirellä tai nuolinäppäimillä.".to_owned()
+            String::new()
         };
 
         Self {
@@ -223,7 +224,8 @@ impl App {
                 GameStyles {
                     base: base_style(&theme),
                     muted: muted_style(&theme),
-                    accent: selected_style(&theme),
+                    accent: accent_style(&theme),
+                    panel: selected_style(&theme),
                 },
             );
             return;
@@ -240,9 +242,9 @@ impl App {
         let areas = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(4),
-                Constraint::Min(16),
-                Constraint::Length(4),
+                Constraint::Length(3),
+                Constraint::Min(10),
+                Constraint::Length(2),
             ])
             .split(area);
 
@@ -275,7 +277,7 @@ impl App {
         if let Some(body) = body {
             let content_areas = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(6), Constraint::Length(6)])
+                .constraints([Constraint::Min(4), Constraint::Length(4)])
                 .split(areas[1]);
 
             let body = Paragraph::new(body)
@@ -307,48 +309,53 @@ impl App {
             .screen(&self.screen)
             .expect("current screen must exist in validated config")
             .buttons;
-        let button_areas = &mut self.button_areas;
         let menu_area = centered_max_width(area, MENU_MAX_WIDTH);
+        let hint_height = MENU_HINT_HEIGHT.min(menu_area.height.saturating_sub(1));
+        let list_area = Rect {
+            x: menu_area.x,
+            y: menu_area.y,
+            width: menu_area.width,
+            height: menu_area.height.saturating_sub(hint_height),
+        };
 
-        *button_areas = grid_areas(
-            menu_area,
+        self.button_areas = grid_areas(
+            list_area,
             buttons.len(),
             theme.layout.columns,
             theme.layout.gap,
         );
 
-        for (index, button_area) in button_areas.iter().copied().enumerate() {
+        for (index, button_area) in self.button_areas.iter().copied().enumerate() {
+            if button_area.height == 0 || button_area.width == 0 {
+                continue;
+            }
             let button = &buttons[index];
             let is_selected = index == selected;
             let style = if is_selected {
                 selected_style(theme).add_modifier(Modifier::BOLD)
             } else {
-                base_style(theme)
+                menu_button_style(theme)
             };
-
-            // Text is the accessibility contract; borders are decoration. When a
-            // tiled/large-font terminal gets short, drop the border before losing
-            // the label or hint to a zero-height inner area.
-            let compact = button_area.height < BUTTON_HEIGHT || button_area.width < 12;
-            let text = if compact && button_area.height < 2 {
-                button.label.clone()
-            } else {
-                format!("{}\n{}", button.label, button.hint)
-            };
-            let mut widget = Paragraph::new(text)
+            let widget = Paragraph::new(button.label.clone())
                 .alignment(Alignment::Center)
-                .style(style)
-                .wrap(Wrap { trim: true });
-
-            if !compact {
-                widget = widget.block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(border_type(theme.border))
-                        .style(style),
-                );
-            }
+                .style(style);
             frame.render_widget(widget, button_area);
+        }
+
+        if hint_height > 0
+            && let Some(button) = buttons.get(selected)
+        {
+            let hint_area = Rect {
+                x: menu_area.x,
+                y: menu_area.y + menu_area.height.saturating_sub(hint_height),
+                width: menu_area.width,
+                height: hint_height,
+            };
+            let hint = Paragraph::new(button.hint.clone())
+                .alignment(Alignment::Center)
+                .style(muted_style(theme))
+                .wrap(Wrap { trim: true });
+            frame.render_widget(hint, hint_area);
         }
     }
 
@@ -487,7 +494,7 @@ impl App {
         if self.screen == "tv" {
             self.television.reset();
         }
-        self.status = self.current_screen().subtitle.clone();
+        self.status.clear();
     }
 
     fn activate(&mut self) -> io::Result<()> {
@@ -526,7 +533,7 @@ impl App {
                         ));
                     };
                     self.games.start(game).map_err(io::Error::other)?;
-                    self.status = format!("Peli käynnissä: {game}");
+                    self.status.clear();
                 } else if self.live_actions {
                     Command::new(&program).args(&args).spawn()?;
                     self.status = live_message;
@@ -600,7 +607,7 @@ impl App {
 
     fn finish_game(&mut self) {
         self.games.stop();
-        self.status = "Valitse peli.".to_owned();
+        self.status.clear();
     }
 
     fn select_id(&mut self, id: &str) -> bool {
@@ -773,7 +780,7 @@ fn run_automation(app: &mut App, config_path: &Path) -> io::Result<()> {
 fn render_remote_notice(frame: &mut Frame, area: Rect, theme: &Theme, notice: &ipc::Event) {
     let style = Style::default()
         .fg(theme_color(theme.colors.background))
-        .bg(theme_color(theme.colors.selected_text));
+        .bg(theme_color(theme.colors.selected_background));
     frame.render_widget(Block::default().style(style), area);
 
     let (title, message) = match notice {
@@ -845,6 +852,18 @@ fn selected_style(theme: &Theme) -> Style {
         .bg(theme_color(theme.colors.selected_background))
 }
 
+fn menu_button_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme_color(theme.colors.background))
+        .bg(theme_color(theme.colors.text))
+}
+
+fn accent_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme_color(theme.colors.selected_background))
+        .bg(theme_color(theme.colors.background))
+}
+
 fn theme_color(color: ThemeColor) -> Color {
     match color {
         ThemeColor::Black => Color::Black,
@@ -857,15 +876,6 @@ fn theme_color(color: ThemeColor) -> Color {
         ThemeColor::Gray => Color::Gray,
         ThemeColor::DarkGray => Color::DarkGray,
         ThemeColor::White => Color::White,
-    }
-}
-
-fn border_type(border: ThemeBorder) -> BorderType {
-    match border {
-        ThemeBorder::Plain => BorderType::Plain,
-        ThemeBorder::Rounded => BorderType::Rounded,
-        ThemeBorder::Double => BorderType::Double,
-        ThemeBorder::Thick => BorderType::Thick,
     }
 }
 
@@ -972,42 +982,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grid_uses_natural_button_height_when_space_allows() {
-        let areas = grid_areas(Rect::new(0, 0, 21, 11), 4, 2, 1);
-        assert_eq!(areas.len(), 4);
-        assert_eq!(areas[0], Rect::new(0, 1, 10, 4));
-        assert_eq!(areas[1], Rect::new(11, 1, 10, 4));
-        assert_eq!(areas[2], Rect::new(0, 6, 10, 4));
-        assert_eq!(areas[3], Rect::new(11, 6, 10, 4));
+    fn grid_uses_one_line_rows_and_keeps_gaps_when_space_allows() {
+        let areas = grid_areas(Rect::new(0, 0, 21, 9), 3, 1, 1);
+        assert_eq!(areas.len(), 3);
+        assert_eq!(areas[0], Rect::new(0, 2, 21, 1));
+        assert_eq!(areas[1], Rect::new(0, 4, 21, 1));
+        assert_eq!(areas[2], Rect::new(0, 6, 21, 1));
     }
 
     #[test]
-    fn grid_drops_vertical_gap_before_button_height() {
-        let areas = grid_areas(Rect::new(0, 0, 21, 8), 4, 2, 1);
-        assert_eq!(areas[0], Rect::new(0, 0, 10, 4));
-        assert_eq!(areas[1], Rect::new(11, 0, 10, 4));
-        assert_eq!(areas[2], Rect::new(0, 4, 10, 4));
-        assert_eq!(areas[3], Rect::new(11, 4, 10, 4));
-    }
-
-    #[test]
-    fn grid_compresses_only_when_button_content_cannot_fit() {
-        let areas = grid_areas(Rect::new(0, 0, 21, 7), 4, 2, 1);
-        assert_eq!(areas[0], Rect::new(0, 0, 10, 4));
-        assert_eq!(areas[1], Rect::new(11, 0, 10, 4));
-        assert_eq!(areas[2], Rect::new(0, 4, 10, 3));
-        assert_eq!(areas[3], Rect::new(11, 4, 10, 3));
+    fn grid_drops_gap_before_losing_button_text() {
+        let areas = grid_areas(Rect::new(0, 0, 21, 3), 3, 1, 1);
+        assert_eq!(areas[0], Rect::new(0, 0, 21, 1));
+        assert_eq!(areas[1], Rect::new(0, 1, 21, 1));
+        assert_eq!(areas[2], Rect::new(0, 2, 21, 1));
     }
 
     #[test]
     fn menu_width_is_centered_and_capped() {
         assert_eq!(
-            centered_max_width(Rect::new(10, 2, 100, 20), 64),
-            Rect::new(28, 2, 64, 20)
+            centered_max_width(Rect::new(10, 2, 100, 20), 48),
+            Rect::new(36, 2, 48, 20)
         );
         assert_eq!(
-            centered_max_width(Rect::new(10, 2, 50, 20), 64),
-            Rect::new(10, 2, 50, 20)
+            centered_max_width(Rect::new(10, 2, 40, 20), 48),
+            Rect::new(10, 2, 40, 20)
         );
     }
 }
