@@ -16,12 +16,14 @@ use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 
 use crate::{
     config::{self, Action, Button, Config, Theme, ThemeBorder, ThemeColor},
     games::{self, Intent as GameIntent, Styles as GameStyles},
+    ipc,
     tv::{self, Intent as TvIntent, TvCommand},
     watch::{self, WatchEvent},
 };
@@ -73,6 +75,7 @@ enum RuntimeEvent {
     TerminalFailed(String),
     ConfigChanged,
     WatchFailed,
+    Remote(ipc::Event),
     BrowserFinished(Result<(), String>),
     TvFinished(tv::Outcome),
 }
@@ -87,6 +90,7 @@ struct App {
     live_actions: bool,
     runtime_sender: Option<Sender<RuntimeEvent>>,
     browser_busy: Option<String>,
+    remote_notice: Option<ipc::Event>,
     television: tv::State,
     games: games::State,
 }
@@ -110,6 +114,7 @@ impl App {
             live_actions,
             runtime_sender: None,
             browser_busy: None,
+            remote_notice: None,
             television: tv::State::default(),
             games: games::State::default(),
         }
@@ -133,6 +138,11 @@ impl App {
                 }
             };
             let _ = watch_sender.send(event);
+        })?;
+
+        let ipc_sender = sender.clone();
+        let _ipc_listener = ipc::spawn_listener(move |event| {
+            let _ = ipc_sender.send(RuntimeEvent::Remote(event));
         })?;
 
         while !self.exit {
@@ -170,6 +180,16 @@ impl App {
                 RuntimeEvent::WatchFailed => {
                     self.status = "Asetusten automaattinen päivitys ei toimi.".to_owned();
                 }
+                RuntimeEvent::Remote(ipc::Event::Ping) => {
+                    self.remote_notice = Some(ipc::Event::Ping);
+                }
+                RuntimeEvent::Remote(ipc::Event::Message(message)) => {
+                    self.remote_notice = Some(ipc::Event::Message(message));
+                }
+                RuntimeEvent::Remote(ipc::Event::Failed(error)) => {
+                    eprintln!("momarchy: Home message listener failed: {error}");
+                    self.status = "Etäviestien vastaanotto ei toimi.".to_owned();
+                }
                 RuntimeEvent::BrowserFinished(result) => self.finish_browser(result),
                 RuntimeEvent::TvFinished(outcome) => self.television.finish(outcome),
             }
@@ -182,6 +202,12 @@ impl App {
         let theme = self.config.theme.clone();
         let frame_area = frame.area();
         frame.render_widget(Block::default().style(base_style(&theme)), frame_area);
+
+        if let Some(notice) = self.remote_notice.as_ref() {
+            self.button_areas.clear();
+            render_remote_notice(frame, frame_area, &theme, notice);
+            return;
+        }
 
         if let Some(message) = self.browser_busy.as_deref() {
             self.button_areas.clear();
@@ -300,16 +326,28 @@ impl App {
                 base_style(theme)
             };
 
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(border_type(theme.border))
-                .style(style);
-            let text = format!("{}\n{}", button.label, button.hint);
-            let widget = Paragraph::new(text)
+            // Text is the accessibility contract; borders are decoration. When a
+            // tiled/large-font terminal gets short, drop the border before losing
+            // the label or hint to a zero-height inner area.
+            let compact = button_area.height < BUTTON_HEIGHT || button_area.width < 12;
+            let text = if compact && button_area.height < 2 {
+                button.label.clone()
+            } else {
+                format!("{}\n{}", button.label, button.hint)
+            };
+            let mut widget = Paragraph::new(text)
                 .alignment(Alignment::Center)
-                .block(block)
                 .style(style)
                 .wrap(Wrap { trim: true });
+
+            if !compact {
+                widget = widget.block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(border_type(theme.border))
+                        .style(style),
+                );
+            }
             frame.render_widget(widget, button_area);
         }
     }
@@ -329,6 +367,19 @@ impl App {
     }
 
     fn handle_event(&mut self, event: Event) -> io::Result<()> {
+        if self.remote_notice.is_some() {
+            if matches!(
+                event,
+                Event::Key(key) if key.kind == KeyEventKind::Press
+            ) || matches!(
+                event,
+                Event::Mouse(mouse) if matches!(mouse.kind, MouseEventKind::Down(_))
+            ) {
+                self.remote_notice = None;
+            }
+            return Ok(());
+        }
+
         if self.browser_busy.is_some() {
             if let Event::Key(key) = event
                 && key.kind == KeyEventKind::Press
@@ -562,6 +613,10 @@ impl App {
     }
 
     fn automation_key(&mut self, key: &str) -> io::Result<()> {
+        if self.remote_notice.take().is_some() {
+            return Ok(());
+        }
+
         if self.games.is_active() {
             if self.games.handle_named_key(key) == GameIntent::Back {
                 self.finish_game();
@@ -625,6 +680,13 @@ impl App {
         )?;
         if let Some(game) = self.games.active_name() {
             writeln!(out, "GAME {game}")?;
+        }
+        if let Some(notice) = self.remote_notice.as_ref() {
+            match notice {
+                ipc::Event::Ping => writeln!(out, "NOTICE PING")?,
+                ipc::Event::Message(message) => writeln!(out, "NOTICE MESSAGE {message}")?,
+                ipc::Event::Failed(error) => writeln!(out, "NOTICE FAILED {error}")?,
+            }
         }
         writeln!(out, "SELECTED {}", self.buttons()[self.selected].id)?;
         writeln!(out, "ACTIONS")?;
@@ -706,6 +768,48 @@ fn run_automation(app: &mut App, config_path: &Path) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn render_remote_notice(frame: &mut Frame, area: Rect, theme: &Theme, notice: &ipc::Event) {
+    let style = Style::default()
+        .fg(theme_color(theme.colors.background))
+        .bg(theme_color(theme.colors.selected_text));
+    frame.render_widget(Block::default().style(style), area);
+
+    let (title, message) = match notice {
+        ipc::Event::Ping => ("PING! 👋", "Hei!"),
+        ipc::Event::Message(message) => ("VIESTI", message.as_str()),
+        ipc::Event::Failed(error) => ("VIESTIVIRHE", error.as_str()),
+    };
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(20),
+            Constraint::Percentage(60),
+            Constraint::Percentage(20),
+        ])
+        .split(inset(area, 1));
+    let text = vec![
+        Line::from(Span::styled(
+            title,
+            style.add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            message,
+            style.add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Paina mitä tahansa näppäintä jatkaaksesi.",
+            style,
+        )),
+    ];
+    let notice = Paragraph::new(text)
+        .alignment(Alignment::Center)
+        .style(style)
+        .wrap(Wrap { trim: true });
+    frame.render_widget(notice, rows[1]);
 }
 
 fn render_busy(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {
