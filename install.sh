@@ -173,6 +173,103 @@ remove_exact_line() {
   fi
 }
 
+ensure_foot_theme() {
+  local foot_dir="$HOME/.config/foot"
+  local foot_config="$foot_dir/foot.ini"
+  local theme_config="$CONFIG_DIR/foot.ini"
+  local include_line='include=~/.config/momarchy/foot.ini'
+  local existing_backup=""
+  local foot_version
+  local foot_major
+  local foot_minor
+  local colors_section
+
+  mkdir -p "$foot_dir"
+
+  if [[ -L "$foot_config" ]] || [[ -e "$foot_config" && ! -f "$foot_config" ]]; then
+    printf 'Expected %s to be a regular file or absent.\n' "$foot_config" >&2
+    printf '%s\n' 'Refusing to alter an unexpected Foot configuration path; inspect it manually, then rerun `cargo provision`.' >&2
+    return 1
+  fi
+
+  if ! foot --check-config >/dev/null 2>&1; then
+    printf 'Existing Foot configuration at %s does not validate.\n' "$foot_config" >&2
+    printf '%s\n' 'Run `foot --check-config` on the target, repair the existing config, then rerun `cargo provision`.' >&2
+    return 1
+  fi
+
+  foot_version="$(foot --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1 || true)"
+  if [[ -z "$foot_version" ]]; then
+    printf '%s\n' 'Could not determine the installed Foot version.' >&2
+    return 1
+  fi
+  foot_major="${foot_version%%.*}"
+  foot_minor="${foot_version#*.}"
+  foot_minor="${foot_minor%%.*}"
+  if ((foot_major > 1 || (foot_major == 1 && foot_minor >= 26))); then
+    colors_section='colors-dark'
+  else
+    colors_section='colors'
+  fi
+
+  write_if_changed "$theme_config" <<EOF
+# Managed by Momarchy install.sh.
+# Finnish flag base: white on deep blue. Yellow is the high-visibility secondary
+# accent, deliberately reminiscent of old-school Turbo Pascal.
+[main]
+font=monospace:size=14
+
+[$colors_section]
+background=002f6c
+foreground=ffffff
+regular0=001b3f
+regular1=d64045
+regular2=80b918
+regular3=ffd700
+regular4=002f6c
+regular5=c77dff
+regular6=4cc9f0
+regular7=ffffff
+bright0=6c7a89
+bright1=ff6b6b
+bright2=a7e163
+bright3=ffff55
+bright4=4d8dff
+bright5=e0aaff
+bright6=90e0ef
+bright7=ffffff
+selection-foreground=002f6c
+selection-background=ffd700
+EOF
+
+  if [[ -f "$foot_config" ]]; then
+    existing_backup="$(mktemp "$STATE_DIR/foot.ini.backup.XXXXXX")"
+    cp -p -- "$foot_config" "$existing_backup"
+  fi
+
+  touch "$foot_config"
+  if ! grep -Fqx -- "$include_line" "$foot_config"; then
+    # Explicitly reopen [main] so this remains correct even when an existing
+    # config ends inside another section. Foot documents [main] for this use.
+    printf '\n[main]\n%s\n' "$include_line" >>"$foot_config"
+    printf '==> connected Momarchy terminal theme from %s\n' "$foot_config"
+  fi
+
+  if ! foot --check-config >/dev/null 2>&1; then
+    if [[ -n "$existing_backup" ]]; then
+      cp -p -- "$existing_backup" "$foot_config"
+    else
+      rm -f -- "$foot_config"
+    fi
+    rm -f -- "$existing_backup"
+    printf '%s\n' 'Momarchy terminal theme made Foot configuration invalid; restored the previous config.' >&2
+    printf '%s\n' 'Run `foot --check-config` on the target for details.' >&2
+    return 1
+  fi
+
+  rm -f -- "$existing_backup"
+}
+
 legacy_inline_home_present() {
   local file="$1"
   [[ -f "$file" ]] || return 1
@@ -445,10 +542,16 @@ if lspci -nn 2>/dev/null | grep -qi '\[14e4:432b\]' \
   yay -S --needed --noconfirm b43-firmware
 fi
 
+# The appliance terminal is part of Momarchy's visual/accessibility contract.
+# Keep our actual theme in Momarchy-owned config and connect it to Foot with one
+# small include in the user's normal config. New terminals pick this up globally.
+ensure_foot_theme
+
 printf '%s\n' '==> Momarchy target provisioning complete'
 printf '    user: %s\n' "$TARGET_USER"
 printf '%s\n' '    Home: Omarchy autostart, live actions enabled'
 printf '%s\n' '    Home key: Super+M'
+printf '%s\n' '    terminal: Finnish blue/white theme, yellow accent, 14pt font'
 printf '%s\n' '    Chromecast: catt installed'
 printf '%s\n' '    idle lock/screensaver: disabled (stay awake)'
 printf '%s\n' '    system sleep/hibernate: disabled; lid close ignored'
