@@ -1,8 +1,9 @@
 use std::{
     env, fs,
     ffi::OsStr,
+    io::Write,
     path::{Path, PathBuf},
-    process::{Command, ExitCode},
+    process::{Command, ExitCode, Stdio},
     time::{Duration, Instant},
 };
 
@@ -38,6 +39,23 @@ fn main() -> ExitCode {
             Some(target) => deploy(&target),
             None => Err("usage: cargo deploy <ssh-target>\nexample: cargo deploy t@momarchy".into()),
         },
+        Some("ping") => match args.next() {
+            Some(target) => ping(&target),
+            None => Err("usage: cargo ping <ssh-target>\nexample: cargo ping t@momarchy".into()),
+        },
+        Some("msg") => match args.next() {
+            Some(target) => {
+                let message = args.collect::<Vec<_>>().join(" ");
+                if message.trim().is_empty() {
+                    Err("usage: cargo msg <ssh-target> <message>\nexample: cargo msg t@momarchy \"Hei!\"".into())
+                } else {
+                    message_target(&target, &message)
+                }
+            }
+            None => Err(
+                "usage: cargo msg <ssh-target> <message>\nexample: cargo msg t@momarchy \"Hei!\"".into(),
+            ),
+        },
         Some("home") => dev_home(args.collect()),
         Some("screenshot") => match args.next() {
             Some(target) => screenshot(&target),
@@ -46,7 +64,7 @@ fn main() -> ExitCode {
             ),
         },
         _ => Err(
-            "xtask commands:\n  home [momarchy-home-options]\n  provision <ssh-target>\n  deploy <ssh-target>\n  screenshot <ssh-target>"
+            "xtask commands:\n  home [momarchy-home-options]\n  provision <ssh-target>\n  deploy <ssh-target>\n  ping <ssh-target>\n  msg <ssh-target> <message>\n  screenshot <ssh-target>"
                 .into(),
         ),
     };
@@ -86,6 +104,36 @@ fn dev_home(home_args: Vec<String>) -> Result<(), String> {
         .args(home_args);
 
     run(&mut command)
+}
+
+fn ping(target: &str) -> Result<(), String> {
+    ensure_ssh_reachable(target, "remote ping")?;
+
+    println!("==> pinging Momarchy Home on {target}");
+    let mut command = ssh_command(target, false);
+    command.arg("\"$HOME/.local/bin/momarchy\" ping");
+    run(&mut command).map_err(|error| {
+        format!(
+            "{error}\n\nThe Momarchy binary must be deployed and Home must currently be running on the target."
+        )
+    })?;
+    println!("==> ping delivered to {target}");
+    Ok(())
+}
+
+fn message_target(target: &str, message: &str) -> Result<(), String> {
+    ensure_ssh_reachable(target, "remote message")?;
+
+    println!("==> sending message to Momarchy Home on {target}");
+    let mut command = ssh_command(target, false);
+    command.arg("\"$HOME/.local/bin/momarchy\" msg --stdin");
+    run_with_input(&mut command, message.as_bytes()).map_err(|error| {
+        format!(
+            "{error}\n\nThe Momarchy binary must be deployed and Home must currently be running on the target."
+        )
+    })?;
+    println!("==> message delivered to {target}");
+    Ok(())
 }
 
 fn screenshot(target: &str) -> Result<(), String> {
@@ -361,6 +409,43 @@ fn run(command: &mut Command) -> Result<(), String> {
     let status = command.status().map_err(|error| {
         format!(
             "could not start command\n  command: {command_line}{cwd}\n  start error: {error}"
+        )
+    })?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "command failed\n  command: {command_line}{cwd}\n  status: {status}\n  stdout/stderr: inherited live; see output above"
+        ))
+    }
+}
+
+fn run_with_input(command: &mut Command, input: &[u8]) -> Result<(), String> {
+    let command_line = command_line(command);
+    let cwd = command_cwd(command);
+    let mut child = command
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "could not start command\n  command: {command_line}{cwd}\n  start error: {error}"
+            )
+        })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(input).map_err(|error| {
+            let _ = child.kill();
+            let _ = child.wait();
+            format!(
+                "could not send command input\n  command: {command_line}{cwd}\n  write error: {error}"
+            )
+        })?;
+    }
+
+    let status = child.wait().map_err(|error| {
+        format!(
+            "could not wait for command\n  command: {command_line}{cwd}\n  wait error: {error}"
         )
     })?;
 
