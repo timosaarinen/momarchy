@@ -117,17 +117,8 @@ fn send_packet(packet: &[u8]) -> io::Result<()> {
 }
 
 fn socket_path() -> io::Result<PathBuf> {
-    if let Some(runtime_dir) = env::var_os("XDG_RUNTIME_DIR")
-        && !runtime_dir.is_empty()
-    {
-        return Ok(PathBuf::from(runtime_dir).join(SOCKET_NAME));
-    }
-
     let home = env::var_os("HOME").ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "HOME and XDG_RUNTIME_DIR are both unavailable",
-        )
+        io::Error::new(io::ErrorKind::NotFound, "HOME is unavailable")
     })?;
     Ok(PathBuf::from(home)
         .join(".local/state/momarchy")
