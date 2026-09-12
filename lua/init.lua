@@ -17,11 +17,11 @@ return ui.app {
     },
 
     colors = {
-      background = "black",
+      background = "blue",
       text = "white",
-      muted = "gray",
-      selected_background = "white",
-      selected_text = "black",
+      muted = "white",
+      selected_background = "blue",
+      selected_text = "yellow",
     },
 
     border = "rounded",
