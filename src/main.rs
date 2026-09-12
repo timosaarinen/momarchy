@@ -2,11 +2,15 @@ mod browser;
 mod config;
 mod games;
 mod home;
+mod ipc;
 mod status;
 mod tv;
 mod watch;
 
-use std::process::ExitCode;
+use std::{
+    io::{self, Read},
+    process::ExitCode,
+};
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -24,6 +28,33 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => fail(&format!("status failed: {error}")),
         },
+        Some("ping") => match ipc::send_ping() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => fail(&format!("ping failed: {error}")),
+        },
+        Some("msg") => {
+            let message_args = args.collect::<Vec<_>>();
+            let message = if message_args.as_slice() == ["--stdin"] {
+                let mut message = String::new();
+                if let Err(error) = io::stdin().read_to_string(&mut message) {
+                    return fail(&format!("could not read message from stdin: {error}"));
+                }
+                message
+                    .trim_end_matches(|character| character == '\r' || character == '\n')
+                    .to_owned()
+            } else {
+                message_args.join(" ")
+            };
+
+            if message.is_empty() {
+                return fail("usage: momarchy msg <message>\n       momarchy msg --stdin");
+            }
+
+            match ipc::send_message(&message) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => fail(&format!("message failed: {error}")),
+            }
+        }
         Some("home") => {
             let mut options = home::Options::default();
 
@@ -59,7 +90,7 @@ fn print_help() {
     println!(
         "Momarchy {}\n\n\
 Usage:\n  momarchy <command>\n\n\
-Commands:\n  home       Open Momarchy Home\n  status     Print a small machine status summary\n  help       Show this help\n\n\
+Commands:\n  home       Open Momarchy Home\n  status     Print a small machine status summary\n  ping       Show an attention ping in a running Momarchy Home\n  msg        Show a message in a running Momarchy Home\n  help       Show this help\n\n\
 Options:\n  -h, --help       Show help\n  -V, --version    Show version",
         env!("CARGO_PKG_VERSION")
     );
