@@ -2,6 +2,8 @@
 home = "run --package xtask -- home"
 provision = "run --package xtask -- provision"
 deploy = "run --package xtask -- deploy"
+ping = "run --package xtask -- ping"
+msg = "run --package xtask -- msg"
 screenshot = "run --package xtask -- screenshot"
 session = "run --package xtask --bin session --"
 
