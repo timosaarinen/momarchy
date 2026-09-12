@@ -34,7 +34,7 @@ fn main() -> ExitCode {
         },
         Some("msg") => {
             let message_args = args.collect::<Vec<_>>();
-            let message = if message_args.as_slice() == ["--stdin"] {
+            let message = if message_args.len() == 1 && message_args[0] == "--stdin" {
                 let mut message = String::new();
                 if let Err(error) = io::stdin().read_to_string(&mut message) {
                     return fail(&format!("could not read message from stdin: {error}"));
