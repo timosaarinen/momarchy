@@ -20,8 +20,8 @@ return ui.app {
       background = "blue",
       text = "white",
       muted = "white",
-      selected_background = "blue",
-      selected_text = "yellow",
+      selected_background = "yellow",
+      selected_text = "blue",
     },
 
     border = "rounded",
@@ -86,10 +86,15 @@ return ui.app {
       ui.button(
         "palikat",
         "PALIKAT",
-        "Putoavia palikoita",
+        "←/→ liikuta · ↑ tai Enter käännä · ↓ alas · välilyönti pudota · H = ohje",
         ui.game "palikat"
       ),
-      ui.button("mato", "MATO", "Syö ja kasva", ui.game "mato"),
+      ui.button(
+        "mato",
+        "MATO",
+        "Nuolinäppäimet ohjaavat · H = ohje",
+        ui.game "mato"
+      ),
       ui.button("back", "TAKAISIN", "Palaa alkuun", ui.go "home"),
     },
 
